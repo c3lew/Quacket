@@ -1,0 +1,578 @@
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket #11: First-run onboarding flow.
+  Three structurally different variants of Quacket's first-run setup,
+  switchable via the floating bottom bar / #A #B #C hash / arrow keys.
+  A scenario picker (bottom bar) simulates machine states:
+    typical = gh installed but not logged in, Claude ready, Codex missing
+    ready   = everything already installed + authenticated
+    fresh   = nothing installed at all
+  Run: open this file in a browser. No build, no deps, all checks fake.
+  Delete when the ticket is resolved.
+-->
+<meta charset="utf-8">
+<title>Quacket first-run onboarding — prototype</title>
+<style>
+  :root{
+    --bg:#101216; --panel:#181b21; --panel2:#1f232b; --line:#2a2f39;
+    --txt:#e6e9ef; --mut:#8b93a3; --acc:#e8a33d; --acc2:#f0b45c;
+    --ok:#4cc38a; --warn:#f2555a; --focus:#4d9fff;
+    font-family:"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);font-size:14px;overflow:hidden}
+  svg{vertical-align:-2px;flex:none}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  input,textarea,select{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--focus)}
+  textarea{resize:none;line-height:1.5}
+  kbd{background:#262b34;border:1px solid #333a46;border-bottom-width:2px;border-radius:4px;padding:1px 5px;font-size:11px;font-family:inherit;color:var(--mut)}
+  ::placeholder{color:#5b6270}
+
+  /* fake desktop + tray (post-setup simulation) */
+  #desktop{position:fixed;inset:0;display:none;flex-direction:column;background:
+    radial-gradient(1200px 600px at 30% 20%, #1a2030, #0c0e12)}
+  #desktop.show{display:flex}
+  #desktop .hint{flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);gap:8px}
+  #taskbar{height:44px;background:#14171c;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;padding:0 14px;gap:10px}
+  #trayduck{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--acc)}
+  #trayduck:hover{background:#232833}
+
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 24px 80px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:7px 12px}
+  .btn:hover{border-color:#3a4150}
+  .btn.pri{background:var(--acc);border-color:var(--acc);color:#1a1408;font-weight:600}
+  .btn.pri:hover{background:var(--acc2)}
+  .btn.ghost{border:none;background:none;color:var(--mut)}
+  .btn.ghost:hover{color:var(--txt)}
+  .btn:disabled{opacity:.45;cursor:default}
+
+  .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;flex:none}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .okc{color:var(--ok)} .badc{color:var(--warn)}
+  .pulse{animation:pu 1.6s ease-in-out infinite}
+  @keyframes pu{50%{opacity:.35}}
+
+  .cmdbox{display:flex;align-items:center;gap:8px;background:#0c0e12;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-family:Consolas,monospace;font-size:13px;margin:8px 0}
+  .cmdbox code{flex:1;overflow-x:auto;white-space:nowrap;color:#c8cedb}
+  .cmdbox button{color:var(--mut);flex:none;display:flex;align-items:center;gap:5px;font-size:12px;font-family:"Segoe UI",system-ui,sans-serif}
+  .cmdbox button:hover{color:var(--txt)}
+
+  .fix{border:1px solid #453a22;background:#221e14;border-radius:8px;padding:12px 14px;margin-top:8px}
+  .fix h5{font-size:13px;color:var(--acc2);margin-bottom:4px;display:flex;align-items:center;gap:6px}
+  .fix p{color:var(--mut);font-size:13px}
+  .fix .simfix{color:#5b6270;font-size:11.5px;text-decoration:underline dotted;margin-top:6px;display:inline-block}
+  .fix .simfix:hover{color:var(--mut)}
+
+  .provcard{border:1px solid var(--line);border-radius:9px;padding:12px 14px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;background:var(--panel2)}
+  .provcard:hover{border-color:#3a4150}
+  .provcard.sel{border-color:var(--acc);background:#25231b}
+  .provcard.dis{opacity:.55;cursor:default}
+  .provcard .radio{width:16px;height:16px;border:2px solid var(--line);border-radius:50%;margin-top:2px;flex:none;display:flex;align-items:center;justify-content:center}
+  .provcard.sel .radio{border-color:var(--acc)}
+  .provcard.sel .radio::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--acc)}
+  .provcard b{font-size:14px}
+  .provcard .sub{color:var(--mut);font-size:12.5px;margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+  .selrow{display:flex;gap:10px;margin-top:10px}
+  .selrow label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut);flex:1}
+  .selrow select{width:100%}
+
+  .hotrec{display:flex;align-items:center;gap:10px}
+  .hotrec input{flex:1;text-align:center;font-size:15px;letter-spacing:.5px;cursor:pointer}
+  .hotrec input.rec{border-color:var(--focus);color:var(--focus)}
+  .hoterr{color:var(--warn);font-size:12.5px;margin-top:7px;display:flex;align-items:center;gap:6px}
+  .simnote{color:#5b6270;font-size:11px;margin-top:6px}
+
+  .chkrow{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--line)}
+  .chkrow:last-child{border-bottom:none}
+  .chkrow .st{width:18px;display:flex;justify-content:center;flex:none}
+  .chkrow .name{font-weight:600;width:150px;flex:none}
+  .chkrow .det{flex:1;color:var(--mut);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ============ Variant A: Wizard ============ */
+  .vA{width:560px;max-height:84vh}
+  .vA header{display:flex;align-items:center;gap:9px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .vA header b{font-size:15px}
+  .vA .dots{display:flex;gap:0;padding:16px 18px 4px}
+  .vA .dot{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11.5px;color:var(--mut);position:relative}
+  .vA .dot::before{content:'';position:absolute;top:9px;left:-50%;width:100%;height:2px;background:var(--line)}
+  .vA .dot:first-child::before{display:none}
+  .vA .dot i{width:20px;height:20px;border-radius:50%;background:var(--panel2);border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;position:relative;z-index:1}
+  .vA .dot.done i{background:#173226;border-color:var(--ok);color:var(--ok)}
+  .vA .dot.cur i{border-color:var(--acc);color:var(--acc)}
+  .vA .dot.cur{color:var(--txt)}
+  .vA .body{padding:16px 22px 6px;overflow:auto;min-height:230px}
+  .vA .body h2{font-size:16px;margin-bottom:4px}
+  .vA .body .lead{color:var(--mut);font-size:13px;margin-bottom:14px}
+  .vA footer{display:flex;align-items:center;gap:10px;padding:14px 18px;border-top:1px solid var(--line);margin-top:10px}
+
+  /* ============ Variant B: Preflight ============ */
+  .vB{width:640px;max-height:86vh}
+  .vB header{display:flex;align-items:center;gap:10px;padding:16px 20px 12px}
+  .vB header .ttl b{font-size:16px;display:block}
+  .vB header .ttl span{color:var(--mut);font-size:12.5px}
+  .vB .body{padding:0 20px;overflow:auto}
+  .vB .sect{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--mut);margin:14px 0 4px}
+  .vB .fixwrap{margin:2px 0 8px 28px}
+  .vB footer{display:flex;align-items:center;gap:12px;padding:14px 20px;border-top:1px solid var(--line);margin-top:12px}
+  .vB footer .stat{flex:1;color:var(--mut);font-size:13px;display:flex;align-items:center;gap:8px}
+
+  /* ============ Variant C: In-palette ============ */
+  .vC{width:620px;max-height:82vh}
+  .vC header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .vC .body{padding:14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+  .vC .setupline{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:12.5px}
+  .vC .setupline .bar{flex:1;height:3px;background:var(--panel2);border-radius:2px;overflow:hidden}
+  .vC .setupline .bar i{display:block;height:100%;background:var(--acc);border-radius:2px;transition:width .4s}
+  .vC .card{border:1px solid var(--line);border-radius:9px;padding:14px 16px;background:var(--panel2)}
+  .vC .card h3{font-size:14px;margin-bottom:3px;display:flex;align-items:center;gap:7px}
+  .vC .card .lead{color:var(--mut);font-size:12.5px;margin-bottom:8px}
+  .vC .card .actions{display:flex;gap:8px;margin-top:10px;align-items:center}
+  .vC textarea{border:none;background:none;padding:2px;font-size:15px;min-height:110px}
+  .vC footer{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+  .vC footer select{padding:4px 7px;font-size:12.5px;background:var(--panel);border-color:var(--line)}
+  .vC .toast{display:flex;align-items:center;gap:8px;background:#173226;border:1px solid #1f4a35;color:var(--ok);border-radius:8px;padding:9px 12px;font-size:13px}
+
+  /* floating switcher bar */
+  #bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+    background:#0b0d10;border:1px solid #333a46;border-radius:20px;padding:4px 6px;box-shadow:0 8px 24px rgba(0,0,0,.6);z-index:99;font-size:12.5px}
+  #bar button.nav{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--mut)}
+  #bar button.nav:hover{background:#1c212a;color:var(--txt)}
+  #bar .lab{min-width:210px;text-align:center;color:var(--txt)}
+  #bar .lab span{color:var(--mut)}
+  #bar select{background:#14171c;border-color:#333a46;color:var(--mut);font-size:12px;padding:3px 6px;border-radius:10px;margin-left:6px}
+</style>
+
+<div id="desktop">
+  <div class="hint" id="summonhint"></div>
+  <div id="taskbar"><button id="trayduck" title="Quacket"></button><span style="color:var(--mut);font-size:12px">14:32</span></div>
+</div>
+<div id="stage"></div>
+<div id="bar"></div>
+
+<script>
+/* ---------------- icons (inline SVG, stroke=currentColor) ---------------- */
+const I = (name, s=15) => {
+  const p = {
+    duck:'M8 3a4 4 0 0 1 4 4v1h2l-2 2.5c.6 4-2 6.5-6 6.5-3.5 0-6-2-6-5.5C0 8 2 6.5 4.5 6.5h.6A4 4 0 0 1 8 3Z',
+    chevR:'m6 4 4 4-4 4', back:'m10 4-4 4 4 4',
+    x:'m4 4 8 8M12 4l-8 8',
+    check:'m3.5 8.5 3 3 6-7',
+    warn:'M8 2 1.5 13.5h13L8 2Zm0 4.5V10M8 12h.01',
+    copy:'M5.5 5.5h8v8h-8zM3 10.5h-.5v-8h8V3',
+    key:'M9.5 6.5a3 3 0 1 0-3 3l1 0v1.5h1.5V12.5h1.5l0-1.5 1.5 0V9.5z',
+    zap:'M8.5 1.5 3 9h4l-1.5 5.5L11 7H7l1.5-5.5Z',
+    gh:'M8 1.5a6.5 6.5 0 0 0-2 12.7c.3 0 .4-.1.4-.3v-1.2c-1.8.4-2.2-.9-2.2-.9-.3-.7-.7-.9-.7-.9-.6-.4 0-.4 0-.4.7 0 1 .7 1 .7.6 1 1.6.7 2 .6 0-.5.2-.8.4-1-1.4-.2-2.9-.7-2.9-3.2 0-.7.2-1.3.7-1.7-.1-.2-.3-.9.1-1.8 0 0 .5-.2 1.8.7a6 6 0 0 1 3.2 0c1.3-.9 1.8-.7 1.8-.7.4.9.2 1.6.1 1.8.4.4.7 1 .7 1.7 0 2.5-1.5 3-2.9 3.2.2.2.4.6.4 1.2v1.8c0 .2.1.4.4.3A6.5 6.5 0 0 0 8 1.5Z',
+    ext:'M6.5 3.5h-3v9h9v-3M9.5 2.5h4v4M13 3 7.5 8.5',
+    rocket:'M9 2.5c2 0 4.5 1 4.5 4.5-1.5 3-4 5.5-7 6.5l-3.5-3.5c1-3 3.5-6.5 6-7.5ZM3 13l-1.5 1.5M10.5 6a.8.8 0 1 0 0-.01',
+    eye:'M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Zm6.5 2a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z'
+  }[name];
+  return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${name==='duck'||name==='gh'?`<path d="${p}" fill="currentColor" stroke="none"/>`:`<path d="${p}"/>`}</svg>`;
+};
+
+/* ---------------- simulated machine scenarios ---------------- */
+const SCENARIOS = {
+  typical:{label:'Scenario: typical (gh not logged in, Codex missing)',
+    gh:{inst:true, auth:false}, claude:{inst:true, auth:true}, codex:{inst:false, auth:false}},
+  ready:{label:'Scenario: everything already set up',
+    gh:{inst:true, auth:true}, claude:{inst:true, auth:true}, codex:{inst:true, auth:true}},
+  fresh:{label:'Scenario: fresh machine (nothing installed)',
+    gh:{inst:false, auth:false}, claude:{inst:false, auth:false}, codex:{inst:false, auth:false}},
+};
+let scenario='typical';
+let ENV; // mutable copy — "fixing" flips these flags
+
+const MODELS = {
+  claude:[
+    {v:'default', n:'Default (recommended)', eff:['low','medium','high','xhigh','max']},
+    {v:'opus[1m]', n:'Opus 4.8 — 1M context', eff:['low','medium','high','xhigh','max']},
+    {v:'sonnet', n:'Sonnet 5', eff:['low','medium','high','xhigh','max']},
+    {v:'haiku', n:'Haiku 4.5 — fastest', eff:[]},
+  ],
+  codex:[
+    {v:'gpt-5.6-sol', n:'gpt-5.6-sol (default)', eff:['minimal','low','medium','high','xhigh','ultra']},
+    {v:'gpt-5.5', n:'gpt-5.5', eff:['minimal','low','medium','high']},
+  ],
+};
+const PROV_META = {
+  claude:{name:'Claude Code', ver:'v2.1.210', acct:'eva8… · Max plan', install:'irm https://claude.ai/install.ps1 | iex', login:'claude', loginNote:'Run claude once in a terminal and complete the login it offers.'},
+  codex:{name:'Codex CLI', ver:'v0.144.4', acct:'ChatGPT account', install:'npm install -g @openai/codex', login:'codex login', loginNote:'Runs a browser sign-in to your ChatGPT account.'},
+};
+const FIX = {
+  ghInst:{title:'GitHub CLI is not installed', why:'Quacket files issues through gh, using the login you already have.', cmd:'winget install GitHub.cli'},
+  ghAuth:{title:'GitHub CLI is not logged in', why:'Quacket reuses gh’s login — no tokens to paste.', cmd:'gh auth login'},
+};
+
+/* ---------------- shared check engine ----------------
+   checks: ghInst → ghAuth ; claudeInst → claudeAuth → claudeModels ; codex likewise.
+   status per check id: undefined | 'run' | 'ok' | 'fail' */
+let S;
+function freshState(){
+  ENV = JSON.parse(JSON.stringify(SCENARIOS[scenario]));
+  return {gen:(S?S.gen:0)+1, chk:{},
+    provider:null, model:null, effort:null,
+    hotkey:'Ctrl+Shift+Q', recording:false, hotkeyErr:null, autostart:true,
+    step:1, done:false, cIdx:0,   // step: wizard A ; cIdx: palette C card index
+    cardIds:cCardIds(),           // variant C card list, fixed per scenario
+  };
+}
+const DELAY = {ghInst:400, ghAuth:350, claudeInst:450, claudeAuth:350, claudeModels:1100, codexInst:300, codexAuth:250, codexModels:250};
+const OKDET = {
+  ghInst:'gh version 2.62.0 — found on PATH', ghAuth:'Logged in to github.com as c3lew',
+  claudeInst:PROV_META.claude.ver+' — found on PATH', claudeAuth:'Logged in — '+PROV_META.claude.acct, claudeModels:'4 models available',
+  codexInst:PROV_META.codex.ver+' — found on PATH', codexAuth:'Logged in using ChatGPT', codexModels:'2 models available',
+};
+function envPass(id){
+  const m={ghInst:ENV.gh.inst, ghAuth:ENV.gh.auth, claudeInst:ENV.claude.inst, claudeAuth:ENV.claude.auth,
+    claudeModels:true, codexInst:ENV.codex.inst, codexAuth:ENV.codex.auth, codexModels:true};
+  return m[id];
+}
+const CHAINS = [['ghInst','ghAuth'], ['claudeInst','claudeAuth','claudeModels'], ['codexInst','codexAuth','codexModels']];
+function runChain(chain, i=0){
+  if(i>=chain.length) return;
+  const id=chain[i], g=S.gen;
+  S.chk[id]='run'; render();
+  setTimeout(()=>{
+    if(S.gen!==g) return;
+    S.chk[id]=envPass(id)?'ok':'fail';
+    if(S.chk[id]==='ok') runChain(chain,i+1);
+    else chain.slice(i+1).forEach(c=>delete S.chk[c]);
+    autoPick(); render();
+  }, DELAY[id]);
+}
+function startChecks(){ CHAINS.forEach(c=>runChain(c)); }
+function refix(id){ // user says "done" → flip env, re-run from that check
+  if(id==='ghInst')ENV.gh.inst=true; if(id==='ghAuth')ENV.gh.auth=true;
+  if(id==='claudeInst')ENV.claude.inst=true; if(id==='claudeAuth')ENV.claude.auth=true;
+  if(id==='codexInst')ENV.codex.inst=true; if(id==='codexAuth')ENV.codex.auth=true;
+  const chain=CHAINS.find(c=>c.includes(id));
+  runChain(chain, chain.indexOf(id));
+}
+function provReady(p){ return S.chk[p+'Models']==='ok'; }
+function anyProvReady(){ return provReady('claude')||provReady('codex'); }
+function ghReady(){ return S.chk.ghAuth==='ok'; }
+function autoPick(){ // stable preselect: prefer Claude while it can still come up; Codex only once Claude is out
+  if(S.provider) return;
+  const claudeOut = ['claudeInst','claudeAuth','claudeModels'].some(k=>S.chk[k]==='fail');
+  const p = provReady('claude') ? 'claude' : (provReady('codex') && claudeOut) ? 'codex' : null;
+  if(!p) return;
+  S.provider=p; S.model=MODELS[p][0].v; S.effort=MODELS[p][0].eff[1]||null;
+}
+function modelObj(){ return MODELS[S.provider]?.find(m=>m.v===S.model); }
+function setupComplete(){ return ghReady() && anyProvReady() && S.provider && S.hotkey && !S.hotkeyErr; }
+
+/* ---------------- shared render pieces ---------------- */
+const stIcon = st => st==='run'?'<span class="spin"></span>'
+  : st==='ok'?`<span class="okc">${I('check')}</span>`
+  : st==='fail'?`<span class="badc">${I('warn')}</span>`
+  : `<span style="color:#3a4150">${I('check')}</span>`;
+
+function fixPanel(id, opts={}){
+  // which fix applies: install vs login, gh vs provider
+  let f;
+  if(id==='ghInst'||id==='ghAuth') f=FIX[id];
+  else{
+    const p=id.startsWith('claude')?'claude':'codex', m=PROV_META[p];
+    f = id.endsWith('Inst') ? {title:m.name+' is not installed', why:'Quacket uses your installed AI CLI — no API keys.', cmd:m.install}
+                            : {title:m.name+' is not logged in', why:m.loginNote, cmd:m.login};
+  }
+  return `<div class="fix">
+    <h5>${I('warn',14)} ${f.title}</h5>
+    <p>${f.why}</p>
+    <div class="cmdbox"><code>${f.cmd}</code><button data-copy="${f.cmd}">${I('copy',13)} Copy</button></div>
+    ${opts.watch
+      ? `<p class="pulse" style="font-size:12px">${I('eye',13)} Watching — this row turns green by itself once that command finishes. <a class="simfix" data-fix="${id}">(prototype: pretend I ran it)</a></p>`
+      : `<div style="display:flex;gap:8px;margin-top:4px;align-items:center"><button class="btn" data-fix="${id}">I’ve done this — check again</button><a class="simfix" style="margin:0">(prototype: this just pretends it worked)</a></div>`}
+  </div>`;
+}
+
+function providerCards(){
+  return ['claude','codex'].map(p=>{
+    const m=PROV_META[p], ready=provReady(p), sel=S.provider===p;
+    const running = ['Inst','Auth','Models'].some(k=>S.chk[p+k]==='run');
+    const failed = ['Inst','Auth'].find(k=>S.chk[p+k]==='fail');
+    return `<div class="provcard ${sel?'sel':''} ${ready?'':'dis'}" ${ready?`data-prov="${p}"`:''}>
+      <span class="radio"></span>
+      <div style="flex:1">
+        <b>${m.name}</b>
+        <div class="sub">${
+          running?'<span class="spin" style="width:12px;height:12px"></span> checking…'
+          :ready?`<span class="okc">${I('check',12)}</span> ${m.ver} · ${OKDET[p+'Auth']} · ${OKDET[p+'Models']}`
+          :failed?`<span class="badc">${I('warn',12)}</span> ${failed==='Inst'?'not installed':'not logged in'}`
+          :'—'}</div>
+        ${sel&&ready?modelEffortSelects():''}
+      </div>
+    </div>`;
+  }).join('');
+}
+function modelEffortSelects(){
+  const mo=modelObj();
+  return `<div class="selrow">
+    <label>Model<select data-model>${MODELS[S.provider].map(m=>`<option value="${m.v}" ${m.v===S.model?'selected':''}>${m.n}</option>`).join('')}</select></label>
+    ${mo&&mo.eff.length?`<label>Thinking effort<select data-effort>${mo.eff.map(e=>`<option ${e===S.effort?'selected':''}>${e}</option>`).join('')}</select></label>`:''}
+  </div>`;
+}
+function hotkeyField(){
+  return `<div class="hotrec">
+    <input readonly data-hotrec class="${S.recording?'rec':''}" value="${S.recording?'Press your shortcut…':S.hotkey}">
+    ${S.hotkey!=='Ctrl+Shift+Q'||S.recording?`<button class="btn ghost" data-act="hotdefault">Use Ctrl+Shift+Q</button>`:''}
+  </div>
+  ${S.hotkeyErr?`<div class="hoterr">${I('warn',13)} ${S.hotkeyErr}</div>`:''}
+  <div class="simnote">(prototype: Ctrl+Shift+C simulates “already taken by another app”)</div>`;
+}
+function autostartRow(){
+  return `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;color:var(--mut);font-size:13px;cursor:pointer">
+    <input type="checkbox" data-act="autostart" ${S.autostart?'checked':''} style="width:15px;height:15px;accent-color:var(--acc)">
+    Start Quacket when Windows starts (recommended — it just sits in the tray)</label>`;
+}
+
+/* ============ Variant A: Wizard ============ */
+const A_STEPS=['GitHub','AI provider','Hotkey','Ready'];
+function stepOk(n){
+  return n===1?ghReady() : n===2?(anyProvReady()&&!!S.provider) : n===3?(!!S.hotkey&&!S.hotkeyErr) : true;
+}
+function renderA(root){
+  const dots=A_STEPS.map((s,i)=>{
+    const n=i+1, cls=n<S.step?'done':n===S.step?'cur':'';
+    return `<div class="dot ${cls}"><i>${n<S.step?I('check',11):n}</i>${s}</div>`;
+  }).join('');
+  let body='';
+  if(S.step===1){
+    body=`<h2>Connect GitHub</h2><p class="lead">Quacket files issues with the GitHub CLI you already use — nothing new to sign up for.</p>
+      <div class="chkrow"><span class="st">${stIcon(S.chk.ghInst)}</span><span class="name">GitHub CLI</span><span class="det">${S.chk.ghInst==='ok'?OKDET.ghInst:S.chk.ghInst==='run'?'looking for gh on PATH…':''}</span></div>
+      ${S.chk.ghInst==='fail'?fixPanel('ghInst'):''}
+      <div class="chkrow"><span class="st">${stIcon(S.chk.ghAuth)}</span><span class="name">GitHub login</span><span class="det">${S.chk.ghAuth==='ok'?OKDET.ghAuth:S.chk.ghAuth==='run'?'gh auth status…':''}</span></div>
+      ${S.chk.ghAuth==='fail'?fixPanel('ghAuth'):''}`;
+  }else if(S.step===2){
+    body=`<h2>Choose your AI</h2><p class="lead">Quacket turns rough notes into a clean ticket using an AI CLI already on your machine. Pick whichever you use.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">${providerCards()}</div>
+      ${anyProvReady()?'':`
+        <p style="color:var(--mut);font-size:12.5px;margin-top:10px">You only need <b>one</b> of these. Install or log in above, whichever is less work.</p>
+        ${S.chk.claudeInst==='fail'?fixPanel('claudeInst'):S.chk.claudeAuth==='fail'?fixPanel('claudeAuth'):''}
+        ${S.chk.codexInst==='fail'?fixPanel('codexInst'):S.chk.codexAuth==='fail'?fixPanel('codexAuth'):''}`}`;
+  }else if(S.step===3){
+    body=`<h2>Pick your summon key</h2><p class="lead">Quacket hides in the tray. This shortcut pops it open from anywhere — mid-test, mid-anything.</p>
+      ${hotkeyField()}${autostartRow()}`;
+  }else{
+    body=`<div style="text-align:center;padding:14px 0">
+      <div style="color:var(--acc);margin-bottom:10px">${I('duck',40)}</div>
+      <h2>You’re set</h2>
+      <p class="lead" style="margin-top:6px">Quacket now lives in your tray.<br>Press <kbd>${S.hotkey}</kbd> whenever something breaks — type, paste a screenshot, and it becomes a proper GitHub issue.</p>
+    </div>`;
+  }
+  root.innerHTML=`<div class="panel vA">
+    <header><span style="color:var(--acc)">${I('duck',20)}</span><b>Quacket</b><span style="color:var(--mut)">· first-run setup</span></header>
+    <div class="dots">${dots}</div>
+    <div class="body">${body}</div>
+    <footer>
+      ${S.step>1&&S.step<4?`<button class="btn ghost" data-act="aback">${I('back',13)} Back</button>`:''}
+      <div style="flex:1"></div>
+      ${S.step<4?`<button class="btn pri" data-act="anext" ${stepOk(S.step)?'':'disabled'}>Continue ${I('chevR',13)}</button>`
+                :`<button class="btn pri" data-act="finish">${I('rocket',14)} Finish — hide to tray</button>`}
+    </footer>
+  </div>`;
+}
+
+/* ============ Variant B: Preflight ============ */
+function renderB(root){
+  const req=(ok)=>ok?`<span class="okc">${I('check')}</span>`:`<span style="color:#3a4150">${I('check')}</span>`;
+  const checking=Object.values(S.chk).includes('run');
+  const missing=[!ghReady()&&'GitHub', !anyProvReady()&&'an AI CLI', (!S.hotkey||S.hotkeyErr)&&'a hotkey'].filter(Boolean);
+  const row=(id,name)=>{
+    const optional = /^(claude|codex)/.test(id) && anyProvReady();  // one AI CLI is enough
+    return `<div class="chkrow"><span class="st">${optional&&S.chk[id]==='fail'?`<span style="color:#3a4150">${I('warn')}</span>`:stIcon(S.chk[id])}</span><span class="name">${name}</span>
+      <span class="det">${S.chk[id]==='ok'?OKDET[id]:S.chk[id]==='run'?'checking…':S.chk[id]==='fail'?(optional?(id.endsWith('Inst')?'not installed':'not logged in')+' — optional, one AI CLI is enough':'needs a quick fix ↓'):''}</span></div>
+    ${S.chk[id]==='fail'&&!optional?`<div class="fixwrap">${fixPanel(id,{watch:true})}</div>`:''}`;
+  };
+  root.innerHTML=`<div class="panel vB">
+    <header><span style="color:var(--acc)">${I('duck',26)}</span>
+      <div class="ttl"><b>Welcome to Quacket</b><span>${checking?'Checking what’s already on this machine…':missing.length?'Almost — a couple of things to sort out below.':'Everything checks out.'}</span></div>
+    </header>
+    <div class="body">
+      <div class="sect">On this machine</div>
+      ${row('ghInst','GitHub CLI')}${row('ghAuth','GitHub login')}
+      ${row('claudeInst','Claude Code')}${S.chk.claudeInst==='ok'?row('claudeAuth','Claude login'):''}
+      ${row('codexInst','Codex CLI')}${S.chk.codexInst==='ok'?row('codexAuth','Codex login'):''}
+      ${!anyProvReady()?`<p style="color:var(--mut);font-size:12.5px;padding:6px 4px">Only <b>one</b> AI CLI is needed — fix whichever you already use.</p>`:''}
+      <div class="sect">Your setup</div>
+      ${anyProvReady()?`<div style="display:flex;flex-direction:column;gap:8px;padding:4px 0">${providerCards()}</div>`
+        :`<p style="color:#5b6270;font-size:13px;padding:6px 4px">Model choices appear here once an AI CLI above is ready.</p>`}
+      <div style="padding:10px 4px 2px">
+        <div style="font-size:13px;color:var(--mut);margin-bottom:6px">${I('key',13)} Summon shortcut — pops Quacket open from anywhere</div>
+        ${hotkeyField()}${autostartRow()}
+      </div>
+    </div>
+    <footer>
+      <div class="stat">${missing.length?`${I('warn',14)} Still needs: ${missing.join(', ')}`:`<span class="okc">${I('check',14)}</span> Ready to go`}</div>
+      <button class="btn pri" data-act="finish" ${setupComplete()?'':'disabled'}>${I('rocket',14)} Start Quacket</button>
+    </footer>
+  </div>`;
+}
+
+/* ============ Variant C: In-palette ============ */
+function cCardIds(){
+  // fixed at reset time from the scenario, so progress never jumps around
+  const ids=[];
+  if(!(ENV.gh.inst&&ENV.gh.auth)) ids.push('gh');
+  if(!(ENV.claude.inst&&ENV.claude.auth)&&!(ENV.codex.inst&&ENV.codex.auth)) ids.push('llm');
+  ids.push('prov','hot');
+  return ids;
+}
+function renderC(root){
+  const cards=S.cardIds.map(id=>({id}));
+  const cur=Math.min(S.cIdx, cards.length);
+  const setupDone = cur>=cards.length;
+  const prog = setupDone?1:(cur/cards.length);
+  let inner='';
+  if(!setupDone){
+    const c=cards[cur];
+    if(c.id==='gh'){
+      inner=`<div class="card"><h3>${I('gh',16)} Connect GitHub</h3>
+        <p class="lead">Your tickets land in your own repos, through the gh login you already have.</p>
+        <div class="chkrow"><span class="st">${stIcon(S.chk.ghInst)}</span><span class="name">GitHub CLI</span><span class="det">${S.chk.ghInst==='ok'?OKDET.ghInst:''}</span></div>
+        ${S.chk.ghInst==='fail'?fixPanel('ghInst'):''}
+        <div class="chkrow"><span class="st">${stIcon(S.chk.ghAuth)}</span><span class="name">Login</span><span class="det">${S.chk.ghAuth==='ok'?OKDET.ghAuth:''}</span></div>
+        ${S.chk.ghAuth==='fail'?fixPanel('ghAuth'):''}
+        <div class="actions"><div style="flex:1"></div><button class="btn pri" data-act="cnext" ${ghReady()?'':'disabled'}>Next ${I('chevR',13)}</button></div>
+      </div>`;
+    }else if(c.id==='llm'){
+      inner=`<div class="card"><h3>${I('zap',15)} Get an AI CLI ready</h3>
+        <p class="lead">Quacket refines your rough notes with Claude Code or Codex — whichever you already have. One is enough.</p>
+        ${S.chk.claudeInst==='fail'?fixPanel('claudeInst'):S.chk.claudeAuth==='fail'?fixPanel('claudeAuth'):''}
+        ${S.chk.codexInst==='fail'?fixPanel('codexInst'):S.chk.codexAuth==='fail'?fixPanel('codexAuth'):''}
+        ${Object.entries({claudeInst:1,claudeAuth:1,codexInst:1,codexAuth:1}).some(([k])=>S.chk[k]==='run')?`<div style="display:flex;gap:8px;color:var(--mut);font-size:13px"><span class="spin"></span> checking…</div>`:''}
+        <div class="actions"><div style="flex:1"></div><button class="btn pri" data-act="cnext" ${anyProvReady()?'':'disabled'}>Next ${I('chevR',13)}</button></div>
+      </div>`;
+    }else if(c.id==='prov'){
+      inner=`<div class="card"><h3>${I('zap',15)} Choose your AI</h3>
+        <p class="lead">This is what turns raw notes into a clean ticket. Change it anytime in the bar below this window.</p>
+        <div style="display:flex;flex-direction:column;gap:8px">${providerCards()}</div>
+        <div class="actions"><div style="flex:1"></div><button class="btn pri" data-act="cnext" ${S.provider?'':'disabled'}>Next ${I('chevR',13)}</button></div>
+      </div>`;
+    }else{
+      inner=`<div class="card"><h3>${I('key',15)} Pick your summon key</h3>
+        <p class="lead">This window hides when you’re done. The shortcut brings it back from anywhere.</p>
+        ${hotkeyField()}${autostartRow()}
+        <div class="actions"><div style="flex:1"></div><button class="btn pri" data-act="cnext" ${S.hotkey&&!S.hotkeyErr?'':'disabled'}>Done ${I('check',13)}</button></div>
+      </div>`;
+    }
+  }else{
+    inner=`${S.cIdx<90?`<div class="toast">${I('check',15)} You’re set — this window <b>is</b> Quacket. <kbd>${S.hotkey}</kbd> summons it anytime. <button class="btn ghost" style="margin-left:auto;padding:2px 6px" data-act="ctoastoff">${I('x',12)}</button></div>`:''}
+      <textarea placeholder="Something broke? Type what happened — paste a screenshot right here — and Quacket writes the ticket." autofocus></textarea>`;
+  }
+  root.innerHTML=`<div class="panel vC">
+    <header>
+      <span style="color:var(--acc)">${I('duck',18)}</span><b style="font-size:13.5px">Quacket</b>
+      ${setupDone?`<button class="btn ghost" style="margin-left:6px;font-size:12.5px;padding:3px 9px;border:1px solid var(--line);border-radius:14px">c3lew/Quacket ${I('chevR',11)}</button>`:''}
+      <div style="flex:1"></div>
+      <button class="btn ghost" data-act="finish" title="Hide to tray">${I('x',14)}</button>
+    </header>
+    <div class="body">
+      ${!setupDone?`<div class="setupline"><span>Setting up</span><div class="bar"><i style="width:${prog*100}%"></i></div><span>${cur} of ${cards.length} done</span></div>`:''}
+      ${inner}
+    </div>
+    <footer>
+      ${anyProvReady()&&S.provider?`
+        <select data-provsel>${['claude','codex'].filter(provReady).map(p=>`<option value="${p}" ${p===S.provider?'selected':''}>${PROV_META[p].name}</option>`).join('')}</select>
+        <select data-model style="max-width:170px">${MODELS[S.provider].map(m=>`<option value="${m.v}" ${m.v===S.model?'selected':''}>${m.n}</option>`).join('')}</select>
+        ${modelObj()&&modelObj().eff.length?`<select data-effort>${modelObj().eff.map(e=>`<option ${e===S.effort?'selected':''}>${e}</option>`).join('')}</select>`:''}`
+        :`<span style="color:#5b6270;font-size:12.5px">model · effort — appear once an AI CLI is ready</span>`}
+      <div style="flex:1"></div>
+      ${setupDone?`<button class="btn pri" disabled>Refine ${I('zap',13)}</button>`:''}
+    </footer>
+  </div>`;
+  if(setupDone){const t=root.querySelector('textarea'); if(t)setTimeout(()=>t.focus(),30);}
+}
+
+/* ---------------- post-setup simulation ---------------- */
+function finish(){
+  document.getElementById('stage').style.display='none';
+  document.getElementById('bar').style.display='none';
+  const d=document.getElementById('desktop'); d.classList.add('show');
+  document.getElementById('summonhint').innerHTML=
+    `Setup done — Quacket is in the tray${S.autostart?' and starts with Windows':''}. Press <kbd>${S.hotkey}</kbd> or click the duck ${I('duck',14)} to summon the capture window <span style="opacity:.6">(see capture-window.html)</span>`;
+}
+function unfinish(){
+  document.getElementById('desktop').classList.remove('show');
+  document.getElementById('stage').style.display='flex';
+  document.getElementById('bar').style.display='flex';
+  reset();
+}
+
+/* ---------------- render + wiring ---------------- */
+const VARIANTS={A:{name:'Wizard — one step at a time',fn:renderA},B:{name:'Preflight — live checklist',fn:renderB},C:{name:'In-palette — setup inside the app',fn:renderC}};
+let V=(location.hash.replace('#','')||'A').toUpperCase(); if(!VARIANTS[V])V='A';
+
+function render(){
+  const root=document.getElementById('stage'); root.innerHTML='';
+  VARIANTS[V].fn(root);
+  document.getElementById('bar').innerHTML=`
+    <button class="nav" data-nav="-1" title="Previous variant">${I('back',13)}</button>
+    <div class="lab">${V} — <span>${VARIANTS[V].name}</span></div>
+    <button class="nav" data-nav="1" title="Next variant">${I('chevR',13)}</button>
+    <select data-scen>${Object.entries(SCENARIOS).map(([k,s])=>`<option value="${k}" ${k===scenario?'selected':''}>${s.label}</option>`).join('')}</select>`;
+}
+function reset(){ S=freshState(); startChecks(); render(); }
+function setVariant(v){ V=v; location.hash=v; reset(); }
+window.addEventListener('hashchange',()=>{ const v=(location.hash.replace('#','')||'A').toUpperCase(); if(VARIANTS[v]&&v!==V){ V=v; reset(); } });
+
+document.getElementById('bar').addEventListener('click',e=>{
+  const b=e.target.closest('[data-nav]'); if(!b)return;
+  const ks=Object.keys(VARIANTS); setVariant(ks[(ks.indexOf(V)+(+b.dataset.nav)+ks.length)%ks.length]);
+});
+document.getElementById('bar').addEventListener('change',e=>{
+  if(e.target.dataset.scen!==undefined){ scenario=e.target.value; reset(); }
+});
+document.getElementById('trayduck').innerHTML=I('duck',18);
+document.getElementById('trayduck').onclick=unfinish;
+
+document.getElementById('stage').addEventListener('click',e=>{
+  const cp=e.target.closest('[data-copy]');
+  if(cp){ navigator.clipboard&&navigator.clipboard.writeText(cp.dataset.copy); cp.innerHTML=`${I('check',13)} Copied`; setTimeout(render,900); return; }
+  const fx=e.target.closest('[data-fix]');
+  if(fx){ refix(fx.dataset.fix); render(); return; }
+  const pv=e.target.closest('[data-prov]');
+  if(pv){ S.provider=pv.dataset.prov; S.model=MODELS[S.provider][0].v; S.effort=MODELS[S.provider][0].eff[1]||null; render(); return; }
+  const hr=e.target.closest('[data-hotrec]');
+  if(hr){ S.recording=true; S.hotkeyErr=null; render(); document.querySelector('[data-hotrec]').focus(); return; }
+  const b=e.target.closest('[data-act]'); if(!b)return;
+  const act=b.dataset.act;
+  if(act==='anext'){ S.step=Math.min(4,S.step+1); render(); }
+  else if(act==='aback'){ S.step=Math.max(1,S.step-1); render(); }
+  else if(act==='cnext'){ S.cIdx++; render(); }
+  else if(act==='ctoastoff'){ S.cIdx=99; render(); }
+  else if(act==='hotdefault'){ S.hotkey='Ctrl+Shift+Q'; S.hotkeyErr=null; S.recording=false; render(); }
+  else if(act==='autostart'){ S.autostart=b.checked; }
+  else if(act==='finish')finish();
+});
+document.addEventListener('keydown',e=>{
+  if(S&&S.recording){
+    e.preventDefault();
+    if(['Control','Shift','Alt','Meta'].includes(e.key))return;
+    const mods=[e.ctrlKey&&'Ctrl',e.shiftKey&&'Shift',e.altKey&&'Alt',e.metaKey&&'Win'].filter(Boolean);
+    if(!mods.length){ S.hotkeyErr='Add a modifier (Ctrl / Alt / Shift) — a bare key would fire while you type.'; render(); return; }
+    const combo=[...mods, e.key.length===1?e.key.toUpperCase():e.key].join('+');
+    S.recording=false;
+    if(combo==='Ctrl+Shift+C'){ S.hotkeyErr='That one’s already taken by another app. Try a different combination.'; S.hotkey=''; }
+    else { S.hotkey=combo; S.hotkeyErr=null; }
+    render(); return;
+  }
+  const t=e.target;
+  if(t.matches('input,textarea,select,[contenteditable]'))return;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    const ks=Object.keys(VARIANTS);
+    setVariant(ks[(ks.indexOf(V)+(e.key==='ArrowRight'?1:-1)+ks.length)%ks.length]);
+  }
+});
+document.getElementById('stage').addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.model!==undefined){ S.model=t.value; const mo=modelObj(); S.effort=mo.eff.includes(S.effort)?S.effort:(mo.eff[1]||null); render(); }
+  else if(t.dataset.effort!==undefined){ S.effort=t.value; render(); }
+  else if(t.dataset.provsel!==undefined){ S.provider=t.value; S.model=MODELS[S.provider][0].v; S.effort=MODELS[S.provider][0].eff[1]||null; render(); }
+});
+
+reset();
+</script>
