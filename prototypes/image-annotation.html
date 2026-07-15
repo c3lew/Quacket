@@ -1,0 +1,508 @@
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket #12: Image annotation UX (paste, mark, attach).
+  Three structurally different homes for the annotation editor inside the winning
+  Palette capture window (ticket #10), switchable via the floating bottom bar /
+  #A #B #C hash / arrow keys:
+    A — Morph:    the palette panel itself becomes the editor (in-place stage swap)
+    B — Lightbox: editor opens as a large overlay above the dimmed palette
+    C — Inline:   pasted images are embedded full-width and always editable, no mode
+  Toolset per ticket: pen, circle, crop. Keyboard: P/O/C tools, Ctrl+Z undo,
+  Enter confirm / apply crop, Esc cancel, Ctrl+1..9 annotate image N, Del remove.
+  Run: open this file in a browser. Paste (Ctrl+V) or drag real images in,
+  or use the paperclip to attach a fake screenshot. One sample image preloaded.
+  Delete when the ticket is resolved.
+-->
+<meta charset="utf-8">
+<title>Quacket image annotation — prototype</title>
+<style>
+  :root{
+    --bg:#101216; --panel:#181b21; --panel2:#1f232b; --line:#2a2f39;
+    --txt:#e6e9ef; --mut:#8b93a3; --acc:#e8a33d; --acc2:#f0b45c;
+    --ok:#4cc38a; --warn:#f2555a; --focus:#4d9fff;
+    font-family:"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{background:radial-gradient(1200px 600px at 30% 20%, #1a2030, #0c0e12);color:var(--txt);font-size:14px;overflow:hidden}
+  svg{vertical-align:-2px;flex:none}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  textarea{font:inherit;color:var(--txt);background:none;border:none;padding:2px;outline:none;resize:none;line-height:1.5;font-size:15px;min-height:96px}
+  kbd{background:#262b34;border:1px solid #333a46;border-bottom-width:2px;border-radius:4px;padding:1px 5px;font-size:11px;font-family:inherit;color:var(--mut)}
+  ::placeholder{color:#5b6270}
+
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 24px 80px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden}
+  .panel header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .panel .body{padding:14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+  .panel footer{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+  .wordmark{display:flex;align-items:center;gap:6px;color:var(--acc);font-weight:600;font-size:13px}
+  .wordmark b{color:var(--txt)}
+  .repopill{display:flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);border-radius:16px;background:var(--panel2);font-size:13px}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:7px 12px}
+  .btn:hover{border-color:#3a4150}
+  .btn.pri{background:var(--acc);border-color:var(--acc);color:#1a1408;font-weight:600}
+  .btn.pri:hover{background:var(--acc2)}
+  .btn.pri kbd{background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408}
+  .btn.ghost{border:none;background:none;color:var(--mut)}
+  .btn.ghost:hover{color:var(--txt)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .iconbtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:var(--mut)}
+  .iconbtn:hover{background:var(--panel2);color:var(--txt)}
+
+  /* thumbnails (variants A + B) */
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .thumb{position:relative;width:88px;height:62px;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#000;padding:0}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb .pen{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:5px;background:rgba(0,0,0,.5);color:#fff;font-size:11.5px;opacity:0;transition:opacity .12s}
+  .thumb:hover .pen,.thumb:focus-visible .pen{opacity:1}
+  .thumb:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+  .thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:4px;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;color:#fff}
+  .thumb .marked{position:absolute;bottom:2px;left:2px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.7);color:var(--acc);font-size:10px;display:flex;align-items:center;gap:3px}
+  .thumbhint{color:#5b6270;font-size:11.5px}
+
+  /* annotation editor (shared engine, per-variant placement) */
+  .edbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .tool{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;font-size:12.5px;color:var(--mut)}
+  .tool:hover{color:var(--txt)}
+  .tool.on{border-color:var(--acc);color:var(--acc);background:#2a2415}
+  .tool:focus-visible{outline:2px solid var(--focus)}
+  .edsep{width:1px;height:18px;background:var(--line);margin:0 4px}
+  .crophint{font-size:12px;color:var(--acc);display:inline-flex;gap:6px;align-items:center;margin-left:auto}
+  .crophint[hidden]{display:none}
+  .edwrap{background:#0b0d10;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;padding:10px;margin-top:10px;outline:none;min-height:120px}
+  .edwrap canvas{max-width:100%;cursor:crosshair;border-radius:3px;display:block}
+
+  /* variant C inline blocks */
+  .imgblock{border:1px solid var(--line);border-radius:8px;overflow:hidden;outline:none}
+  .imgblock:focus-within,.imgblock:focus{border-color:#3a4150;box-shadow:0 0 0 1px #3a4150}
+  .imgblock .blockhead{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;background:var(--panel2);border-bottom:1px solid var(--line)}
+  .imgblock .blockhead .fname{font-size:12px;color:var(--mut)}
+  .imgblock .edbar{padding:8px 10px;border-bottom:1px solid var(--line)}
+  .imgblock .edwrap{border:none;border-radius:0;margin:0;padding:0;background:#0b0d10}
+  .imgblock .edwrap canvas{width:100%;height:auto;max-height:none;border-radius:0}
+
+  /* variant A morph */
+  .vA{width:620px;max-height:84vh;transition:width .18s ease}
+  .vA.editing{width:820px}
+  .vA .edwrap canvas{max-height:52vh}
+
+  /* variant B lightbox */
+  .vB{width:620px;max-height:84vh}
+  #overlay{position:fixed;inset:0;background:rgba(6,8,10,.72);display:none;align-items:center;justify-content:center;z-index:50}
+  #overlay.show{display:flex}
+  #overlay .edpanel{width:min(92vw,1040px);max-height:90vh;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.7);display:flex;flex-direction:column;overflow:hidden}
+  #overlay .edtitle{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+  #overlay .edmain{padding:12px 14px;overflow:auto;display:flex;flex-direction:column}
+  #overlay .edwrap canvas{max-height:64vh}
+  #overlay .edfoot{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+
+  /* variant C */
+  .vC{width:620px;max-height:84vh}
+
+  /* floating switcher bar */
+  #bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+    background:#0b0d10;border:1px solid #333a46;border-radius:20px;padding:4px 6px;box-shadow:0 8px 24px rgba(0,0,0,.6);z-index:99;font-size:12.5px}
+  #bar button{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--mut)}
+  #bar button:hover{background:#1c212a;color:var(--txt)}
+  #bar .lab{min-width:230px;text-align:center;color:var(--txt)}
+  #bar .lab span{color:var(--mut)}
+</style>
+
+<div id="stage"></div>
+<div id="overlay"></div>
+<div id="bar"></div>
+
+<script>
+/* ---------------- icons (inline SVG, stroke=currentColor) ---------------- */
+const I = (name, s=15) => {
+  const p = {
+    duck:'M8 3a4 4 0 0 1 4 4v1h2l-2 2.5c.6 4-2 6.5-6 6.5-3.5 0-6-2-6-5.5C0 8 2 6.5 4.5 6.5h.6A4 4 0 0 1 8 3Z',
+    zap:'M8.5 1.5 3 9h4l-1.5 5.5L11 7H7l1.5-5.5Z',
+    chev:'m5 6 3 3 3-3', chevR:'m6 4 4 4-4 4', back:'m10 4-4 4 4 4',
+    x:'m4 4 8 8M12 4l-8 8',
+    clip:'M12.5 7.5 8 12a3 3 0 0 1-4.24-4.24L9 2.5a2 2 0 0 1 2.83 2.83L7 10.2a1 1 0 0 1-1.41-1.4L10 4.5',
+    check:'m3.5 8.5 3 3 6-7',
+    repo:'M4 2.5h8.5v11H5a1.5 1.5 0 0 1-1.5-1.5V4A1.5 1.5 0 0 1 5 2.5M4 10.5h8.5M6 5.5h4',
+    pen:'m3 13 .9-3.6L10.6 2.7a1.6 1.6 0 0 1 2.7 1.1c0 .4-.17.83-.47 1.13L6.1 11.6 3 13Z',
+    oval:'<ellipse cx="8" cy="8" rx="6" ry="4.3"/>',
+    crop:'M5 2v8a1 1 0 0 0 1 1h8M2 5h8a1 1 0 0 1 1 1v8',
+    undo:'m6 3.5-3 3 3 3M3 6.5h6.5a3.5 3.5 0 1 1 0 7H7'
+  }[name];
+  const inner = p.startsWith('<') ? p : (name==='duck'?`<path d="${p}" fill="currentColor" stroke="none"/>`:`<path d="${p}"/>`);
+  return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+};
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------------- annotation engine (shared across variants) ---------------- */
+const PEN='#ff4d5a';
+class Anno{
+  constructor(host, src){
+    host.innerHTML=`<div class="edbar">
+      <button class="tool" data-tool="pen" aria-pressed="false">${I('pen',14)} Pen <kbd>P</kbd></button>
+      <button class="tool" data-tool="circle" aria-pressed="false">${I('oval',14)} Circle <kbd>O</kbd></button>
+      <button class="tool" data-tool="crop" aria-pressed="false">${I('crop',14)} Crop <kbd>C</kbd></button>
+      <span class="edsep"></span>
+      <button class="tool" data-undo>${I('undo',14)} Undo <kbd>Ctrl+Z</kbd></button>
+      <span class="crophint" hidden>${I('check',12)} <kbd>Enter</kbd> apply crop · <kbd>Esc</kbd> cancel</span>
+    </div>
+    <div class="edwrap" tabindex="-1"><canvas></canvas></div>`;
+    this.host=host; this.cv=host.querySelector('canvas'); this.cx=this.cv.getContext('2d');
+    this.hint=host.querySelector('.crophint');
+    this.tool='pen'; this.undoStack=[]; this.crop=null; this.baseData=null; this.drag=null; this.dead=false;
+    const im=new Image();
+    im.onload=()=>{ if(this.dead)return; this.cv.width=im.naturalWidth; this.cv.height=im.naturalHeight; this.cx.drawImage(im,0,0); };
+    im.src=src;
+    host.querySelector('.edbar').addEventListener('click',e=>{
+      const b=e.target.closest('button'); if(!b)return;
+      if(b.dataset.tool)this.setTool(b.dataset.tool); else this.undo();
+    });
+    this.cv.addEventListener('pointerdown',e=>this.down(e));
+    this.cv.addEventListener('pointermove',e=>this.move(e));
+    this.cv.addEventListener('pointerup',e=>this.up(e));
+    this.setTool('pen');
+  }
+  pt(e){ const r=this.cv.getBoundingClientRect();
+    return {x:(e.clientX-r.left)*this.cv.width/r.width, y:(e.clientY-r.top)*this.cv.height/r.height}; }
+  lw(){ return Math.max(3, Math.round(this.cv.width/240)); }
+  snap(){ this.undoStack.push({w:this.cv.width,h:this.cv.height,d:this.cv.toDataURL()});
+    if(this.undoStack.length>30)this.undoStack.shift(); }
+  setTool(t){
+    if(this.crop&&t!=='crop')this.cancelCrop();
+    this.tool=t;
+    this.host.querySelectorAll('[data-tool]').forEach(b=>{
+      const on=b.dataset.tool===t; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on);
+    });
+  }
+  down(e){
+    this.cv.setPointerCapture(e.pointerId);
+    if(this.crop)this.cancelCrop();
+    const p=this.pt(e); this.drag={p};
+    if(this.tool==='pen'){
+      this.snap();
+      Object.assign(this.cx,{lineWidth:this.lw(),strokeStyle:PEN,lineCap:'round',lineJoin:'round'});
+      this.cx.beginPath(); this.cx.moveTo(p.x,p.y);
+    } else {
+      if(this.tool==='circle')this.snap();
+      this.baseData=this.cx.getImageData(0,0,this.cv.width,this.cv.height);
+    }
+    const blk=this.host.closest('.imgblock'); if(blk)blk.focus({preventScroll:true});
+  }
+  move(e){
+    if(!this.drag)return;
+    const p=this.pt(e), a=this.drag.p;
+    if(this.tool==='pen'){ this.cx.lineTo(p.x,p.y); this.cx.stroke(); }
+    else if(this.tool==='circle'){
+      this.cx.putImageData(this.baseData,0,0);
+      Object.assign(this.cx,{lineWidth:this.lw(),strokeStyle:PEN});
+      this.cx.beginPath();
+      this.cx.ellipse((a.x+p.x)/2,(a.y+p.y)/2,Math.abs(p.x-a.x)/2,Math.abs(p.y-a.y)/2,0,0,7);
+      this.cx.stroke();
+    }
+    else if(this.tool==='crop'){
+      const r=this.normRect(a,p);
+      this.cx.putImageData(this.baseData,0,0);
+      this.cx.fillStyle='rgba(0,0,0,.55)'; this.cx.fillRect(0,0,this.cv.width,this.cv.height);
+      this.cx.putImageData(this.baseData,0,0,r.x,r.y,r.w,r.h);
+      this.cx.setLineDash([6,4]); this.cx.lineWidth=2; this.cx.strokeStyle='#fff';
+      this.cx.strokeRect(r.x,r.y,r.w,r.h); this.cx.setLineDash([]);
+      this.drag.r=r;
+    }
+  }
+  up(){
+    if(!this.drag)return;
+    if(this.tool==='crop'){
+      const r=this.drag.r;
+      if(r&&r.w>8&&r.h>8){ this.crop=r; this.hint.hidden=false; }
+      else this.cx.putImageData(this.baseData,0,0);
+    }
+    this.drag=null;
+  }
+  normRect(a,b){ return {x:Math.min(a.x,b.x),y:Math.min(a.y,b.y),w:Math.abs(b.x-a.x),h:Math.abs(b.y-a.y)}; }
+  applyCrop(){
+    if(!this.crop)return;
+    const r=this.crop;
+    this.cx.putImageData(this.baseData,0,0);
+    this.snap();
+    const t=document.createElement('canvas'); t.width=r.w; t.height=r.h;
+    t.getContext('2d').drawImage(this.cv,r.x,r.y,r.w,r.h,0,0,r.w,r.h);
+    this.cv.width=r.w; this.cv.height=r.h; this.cx.drawImage(t,0,0);
+    this.crop=null; this.hint.hidden=true;
+  }
+  cancelCrop(){
+    if(!this.crop)return;
+    this.cx.putImageData(this.baseData,0,0);
+    this.crop=null; this.hint.hidden=true;
+  }
+  undo(){
+    this.cancelCrop();
+    const s=this.undoStack.pop(); if(!s)return;
+    const im=new Image();
+    im.onload=()=>{ this.cv.width=s.w; this.cv.height=s.h; this.cx.drawImage(im,0,0); };
+    im.src=s.d;
+  }
+  flatten(){ this.cancelCrop(); return this.cv.toDataURL(); }
+  /* returns true if the key was consumed */
+  key(e){
+    if(e.ctrlKey&&e.key.toLowerCase()==='z'){ this.undo(); return true; }
+    if(e.ctrlKey||e.altKey)return false;
+    const k=e.key.toLowerCase();
+    if(k==='p'){ this.setTool('pen'); return true; }
+    if(k==='o'){ this.setTool('circle'); return true; }
+    if(k==='c'){ this.setTool('crop'); return true; }
+    if(k==='enter'&&this.crop){ this.applyCrop(); return true; }
+    if(k==='escape'&&this.crop){ this.cancelCrop(); return true; }
+    return false;
+  }
+  destroy(){ this.dead=true; }
+}
+
+/* ---------------- state ---------------- */
+let S, ED=null, CEDS=[];
+function addImage(url){ if(S.editing!=null)return; syncC(); S.images.push({url,marked:false}); render(); }
+function removeImg(i){ syncC(); S.images.splice(i,1); render(); }
+/* variant C: flatten live inline editors back into state before any re-render */
+function syncC(){
+  CEDS.forEach((ed,i)=>{ if(ed&&!ed.dead&&S.images[i]){
+    const d=ed.flatten(); if(d!==S.images[i].url){S.images[i].url=d;S.images[i].marked=true;}
+  } ed&&ed.destroy(); });
+  CEDS=[];
+}
+function confirmEdit(){
+  const i=S.editing;
+  S.images[i].url=ED.flatten(); S.images[i].marked=true;
+  S.editing=null; ED.destroy(); ED=null; render();
+  setTimeout(()=>{const t=document.querySelector(`.thumb[data-i="${i}"]`); if(t)t.focus();},30);
+}
+function cancelEdit(){
+  const i=S.editing;
+  S.editing=null; ED.destroy(); ED=null; render();
+  setTimeout(()=>{const t=document.querySelector(`.thumb[data-i="${i}"]`); if(t)t.focus();},30);
+}
+
+/* ---------------- shared fragments ---------------- */
+function headerHTML(){
+  return `<header>
+    <span class="wordmark">${I('duck',16)}<b>Quacket</b></span>
+    <button class="repopill">${I('repo',13)} c3lew/Quacket ${I('chev',12)}</button>
+    <span style="flex:1"></span>
+    <button class="iconbtn" data-act="hide" title="Hide window">${I('x')}</button>
+  </header>`;
+}
+function thumbsHTML(){
+  if(!S.images.length)return '';
+  return `<div class="thumbs">`+S.images.map((im,i)=>`
+    <button class="thumb" data-annot="${i}" data-i="${i}" title="Annotate (Ctrl+${i+1}) · Del removes">
+      <img src="${im.url}" alt="screenshot ${i+1}">
+      ${im.marked?`<span class="marked">${I('pen',9)} marked</span>`:''}
+      <span class="pen">${I('pen',13)} Annotate</span>
+      <span class="rm" data-rm="${i}" title="Remove">${I('x',10)}</span>
+    </button>`).join('')+`<span class="thumbhint"><kbd>Ctrl+V</kbd> paste more</span></div>`;
+}
+function blocksHTML(){
+  return S.images.map((im,i)=>`
+    <div class="imgblock" tabindex="0" data-i="${i}">
+      <div class="blockhead">
+        <span class="fname">screenshot-${i+1}.png</span>
+        <span style="flex:1"></span>
+        <button class="iconbtn" data-rm="${i}" title="Remove" style="width:26px;height:26px">${I('x',12)}</button>
+      </div>
+      <div data-edhost="${i}"></div>
+    </div>`).join('');
+}
+function captureFootHTML(){
+  return `<button class="iconbtn" data-act="attach" title="Attach sample screenshot">${I('clip')}</button>
+    <span style="flex:1"></span>
+    <button class="btn pri" data-act="refine" ${S.raw.trim()?'':'disabled'}>${I('zap',13)} Refine <kbd>Ctrl+⏎</kbd></button>`;
+}
+const TEXTAREA=()=>`<textarea data-raw placeholder="What broke? Type it raw — paste screenshots right here.">${esc(S.raw)}</textarea>`;
+
+/* ---------------- Variant A: Morph ---------------- */
+function renderA(root){
+  const el=document.createElement('div'); el.className='panel vA'+(S.editing!=null?' editing':'');
+  let body,foot;
+  if(S.editing!=null){
+    body=`<div data-edhost="modal"></div>`;
+    foot=`<button class="btn ghost" data-act="canceledit">${I('back',13)} Cancel <kbd>Esc</kbd></button>
+      <span style="flex:1"></span>
+      <button class="btn pri" data-act="confirmedit">${I('check',13)} Done <kbd>⏎</kbd></button>`;
+  } else {
+    body=TEXTAREA()+thumbsHTML();
+    foot=captureFootHTML();
+  }
+  el.innerHTML=headerHTML()+`<div class="body">${body}</div><footer>${foot}</footer>`;
+  root.appendChild(el);
+  if(S.editing!=null)mountModal(el.querySelector('[data-edhost]'));
+}
+
+/* ---------------- Variant B: Lightbox ---------------- */
+function renderB(root){
+  const el=document.createElement('div'); el.className='panel vB';
+  el.innerHTML=headerHTML()+`<div class="body">${TEXTAREA()+thumbsHTML()}</div><footer>${captureFootHTML()}</footer>`;
+  root.appendChild(el);
+  const ov=document.getElementById('overlay');
+  if(S.editing!=null){
+    ov.innerHTML=`<div class="edpanel">
+      <div class="edtitle">${I('pen',13)} <b>Annotate</b> <span style="color:var(--mut)">— screenshot ${S.editing+1} of ${S.images.length}</span>
+        <span style="flex:1"></span>
+        <button class="iconbtn" data-act="canceledit" title="Cancel">${I('x')}</button></div>
+      <div class="edmain"><div data-edhost="modal"></div></div>
+      <div class="edfoot">
+        <button class="btn ghost" data-act="canceledit">Cancel <kbd>Esc</kbd></button>
+        <span style="flex:1"></span>
+        <button class="btn pri" data-act="confirmedit">${I('check',13)} Done <kbd>⏎</kbd></button>
+      </div></div>`;
+    ov.classList.add('show');
+    mountModal(ov.querySelector('[data-edhost]'));
+  } else { ov.classList.remove('show'); ov.innerHTML=''; }
+}
+
+/* ---------------- Variant C: Inline ---------------- */
+function renderC(root){
+  const el=document.createElement('div'); el.className='panel vC';
+  el.innerHTML=headerHTML()+`<div class="body">${TEXTAREA()+blocksHTML()}</div><footer>${captureFootHTML()}</footer>`;
+  root.appendChild(el);
+  CEDS=S.images.map((im,i)=>new Anno(el.querySelector(`[data-edhost="${i}"]`), im.url));
+}
+
+function mountModal(host){
+  /* survive re-renders mid-edit without losing strokes */
+  const src=(ED&&!ED.dead)?ED.flatten():S.images[S.editing].url;
+  if(ED)ED.destroy();
+  ED=new Anno(host,src);
+  setTimeout(()=>{const w=host.querySelector('.edwrap'); if(w)w.focus();},30);
+}
+
+/* ---------------- render + switcher ---------------- */
+const VARIANTS={
+  A:{name:'Morph — panel becomes editor',fn:renderA},
+  B:{name:'Lightbox — editor over palette',fn:renderB},
+  C:{name:'Inline — always-editable images',fn:renderC},
+};
+let V=(location.hash.replace('#','')||'A').toUpperCase(); if(!VARIANTS[V])V='A';
+
+function render(){
+  syncC();
+  const root=document.getElementById('stage'); root.innerHTML='';
+  if(V!=='B'){const ov=document.getElementById('overlay');ov.classList.remove('show');ov.innerHTML='';}
+  VARIANTS[V].fn(root);
+  document.getElementById('bar').innerHTML=`
+    <button data-nav="-1" title="Previous variant">${I('back',13)}</button>
+    <div class="lab">${V} — <span>${VARIANTS[V].name}</span></div>
+    <button data-nav="1" title="Next variant">${I('chevR',13)}</button>`;
+}
+function setVariant(v){
+  if(S.editing!=null){S.editing=null; if(ED){ED.destroy();ED=null;}}
+  V=v; location.hash=v; render();
+}
+document.getElementById('bar').addEventListener('click',e=>{
+  const b=e.target.closest('[data-nav]'); if(!b)return;
+  const ks=Object.keys(VARIANTS); setVariant(ks[(ks.indexOf(V)+(+b.dataset.nav)+ks.length)%ks.length]);
+});
+
+/* ---------------- delegated actions ---------------- */
+function onAction(e){
+  const rm=e.target.closest('[data-rm]');
+  if(rm){ removeImg(+rm.dataset.rm); e.stopPropagation(); return; }
+  const th=e.target.closest('[data-annot]');
+  if(th){ S.editing=+th.dataset.annot; render(); return; }
+  const b=e.target.closest('[data-act]'); if(!b)return;
+  const act=b.dataset.act;
+  if(act==='attach')addImage(sampleImg());
+  else if(act==='refine')alert('(prototype) refine flow lives in capture-window.html — annotated images ride along as attachments');
+  else if(act==='confirmedit')confirmEdit();
+  else if(act==='canceledit')cancelEdit();
+  else if(act==='hide')alert('(prototype) would hide to tray');
+}
+document.getElementById('stage').addEventListener('click',onAction);
+document.getElementById('overlay').addEventListener('click',e=>{
+  if(e.target===e.currentTarget){cancelEdit();return;}
+  onAction(e);
+});
+document.getElementById('stage').addEventListener('input',e=>{
+  if(e.target.dataset.raw!==undefined){
+    S.raw=e.target.value;
+    const btn=document.querySelector('[data-act="refine"]'); if(btn)btn.disabled=!S.raw.trim();
+  }
+});
+
+/* ---------------- paste + drag-drop ---------------- */
+document.addEventListener('paste',e=>{
+  const f=[...(e.clipboardData?.files||[])].find(f=>f.type.startsWith('image/'));
+  if(f)addImage(URL.createObjectURL(f));
+});
+document.addEventListener('dragover',e=>e.preventDefault());
+document.addEventListener('drop',e=>{
+  e.preventDefault();
+  [...(e.dataTransfer?.files||[])].filter(f=>f.type.startsWith('image/'))
+    .forEach(f=>addImage(URL.createObjectURL(f)));
+});
+
+/* ---------------- global keys ---------------- */
+document.addEventListener('keydown',e=>{
+  const ae=document.activeElement;
+  const inField=/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+
+  /* modal editor open (A / B): route everything to it first */
+  if(S.editing!=null&&ED){
+    if(ED.key(e)){e.preventDefault();return;}
+    if(e.key==='Enter'&&!inField){confirmEdit();e.preventDefault();}
+    else if(e.key==='Escape'){cancelEdit();e.preventDefault();}
+    return;
+  }
+  /* variant C: keys go to the focused image block's editor */
+  const blk=ae.closest?.('.imgblock');
+  if(blk&&!inField){
+    const ed=CEDS[+blk.dataset.i];
+    if(ed&&ed.key(e)){e.preventDefault();return;}
+  }
+  /* open editor / focus block by number */
+  if(e.ctrlKey&&/^[1-9]$/.test(e.key)&&S.images[+e.key-1]){
+    const i=+e.key-1;
+    if(V==='C')document.querySelector(`.imgblock[data-i="${i}"]`)?.focus();
+    else {S.editing=i;render();}
+    e.preventDefault(); return;
+  }
+  /* remove focused thumb / block */
+  if((e.key==='Delete'||e.key==='Backspace')&&!inField){
+    const t=ae.closest?.('.thumb,.imgblock');
+    if(t){removeImg(+t.dataset.i);e.preventDefault();return;}
+  }
+  /* variant switching */
+  if(!inField&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){
+    const ks=Object.keys(VARIANTS);
+    setVariant(ks[(ks.indexOf(V)+(e.key==='ArrowRight'?1:-1)+ks.length)%ks.length]);
+  }
+});
+
+/* ---------------- fake screenshot generator ---------------- */
+function sampleImg(){
+  const c=document.createElement('canvas'); c.width=1100; c.height=700;
+  const x=c.getContext('2d');
+  x.fillStyle='#22262e'; x.fillRect(0,0,1100,700);
+  x.fillStyle='#2f3540'; x.fillRect(0,0,1100,64);
+  x.fillStyle='#f2555a'; x.beginPath(); x.arc(34,32,10,0,7); x.fill();
+  x.fillStyle='#e8a33d'; x.beginPath(); x.arc(66,32,10,0,7); x.fill();
+  x.fillStyle='#4cc38a'; x.beginPath(); x.arc(98,32,10,0,7); x.fill();
+  x.fillStyle='#8b93a3'; x.font='24px Consolas';
+  x.fillText('PS D:\\app> npm start',40,130);
+  x.fillStyle='#c8cedb';
+  x.fillText('Starting dev server on :3000 …',40,180);
+  x.fillText('[tray] registering icon',40,230);
+  x.fillStyle='#f2555a'; x.font='bold 24px Consolas';
+  x.fillText('ERROR: tray icon handle lost after explorer restart',40,300);
+  x.fillStyle='#8b93a3'; x.font='24px Consolas';
+  x.fillText('    at TrayIcon.reattach (tray.rs:142)',40,350);
+  x.fillText('    at EventLoop.poll (main.rs:88)',40,400);
+  x.fillStyle='#3a4150'; x.fillRect(40,470,1020,3);
+  x.fillStyle='#5b6270'; x.font='20px Segoe UI';
+  x.fillText('process exited with code 1 — restart required',40,530);
+  return c.toDataURL();
+}
+
+/* ---------------- boot ---------------- */
+S={raw:'Tray icon vanished after I restarted explorer.exe — see screenshot.', images:[{url:sampleImg(),marked:false}], editing:null};
+window.addEventListener('hashchange',()=>{const v=(location.hash.replace('#','')||'A').toUpperCase();if(VARIANTS[v]&&v!==V){setVariant(v);}});
+render();
+setTimeout(()=>{const t=document.querySelector('textarea');if(t)t.focus();},30);
+</script>
