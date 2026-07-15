@@ -1,0 +1,593 @@
+<!--
+  PROTOTYPE — throwaway. Wayfinder ticket #10: Capture window UX.
+  Three structurally different variants of the Quacket capture window,
+  switchable via the floating bottom bar / #A #B #C hash / arrow keys.
+  Run: open this file in a browser. No build, no deps, all data fake.
+  Delete when the ticket is resolved.
+-->
+<meta charset="utf-8">
+<title>Quacket capture window — prototype</title>
+<style>
+  :root{
+    --bg:#101216; --panel:#181b21; --panel2:#1f232b; --line:#2a2f39;
+    --txt:#e6e9ef; --mut:#8b93a3; --acc:#e8a33d; --acc2:#f0b45c;
+    --ok:#4cc38a; --warn:#f2555a; --focus:#4d9fff;
+    font-family:"Segoe UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);font-size:14px;overflow:hidden}
+  svg{vertical-align:-2px;flex:none}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  input,textarea,select{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:7px 10px;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--focus)}
+  textarea{resize:none;line-height:1.5}
+  kbd{background:#262b34;border:1px solid #333a46;border-bottom-width:2px;border-radius:4px;padding:1px 5px;font-size:11px;font-family:inherit;color:var(--mut)}
+  ::placeholder{color:#5b6270}
+
+  /* fake desktop + tray (summon simulation) */
+  #desktop{position:fixed;inset:0;display:none;flex-direction:column;background:
+    radial-gradient(1200px 600px at 30% 20%, #1a2030, #0c0e12)}
+  #desktop.show{display:flex}
+  #desktop .hint{flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);gap:8px}
+  #taskbar{height:44px;background:#14171c;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:flex-end;padding:0 14px;gap:10px}
+  #trayduck{width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--acc)}
+  #trayduck:hover{background:#232833}
+
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 24px 80px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden}
+
+  .btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:7px 12px}
+  .btn:hover{border-color:#3a4150}
+  .btn.pri{background:var(--acc);border-color:var(--acc);color:#1a1408;font-weight:600}
+  .btn.pri:hover{background:var(--acc2)}
+  .btn.ghost{border:none;background:none;color:var(--mut)}
+  .btn.ghost:hover{color:var(--txt)}
+  .btn:disabled{opacity:.45;cursor:default}
+  .iconbtn{width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border-radius:7px;color:var(--mut)}
+  .iconbtn:hover{background:var(--panel2);color:var(--txt)}
+
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap}
+  .thumb{position:relative;width:74px;height:52px;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:#000}
+  .thumb img{width:100%;height:100%;object-fit:cover}
+  .thumb .rm{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:4px;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;color:#fff}
+
+  .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  .qrow{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .qrow label{font-size:13px;color:var(--txt)}
+  .qrow .opt{color:var(--mut);font-size:11px;margin-left:6px}
+
+  .simcard{border:1px solid #3d3524;background:#221e14;border-radius:8px;padding:10px 12px;margin:12px 0 2px}
+  .simcard h4{font-size:12px;color:var(--acc);display:flex;gap:6px;align-items:center;font-weight:600;margin-bottom:8px}
+  .simitem{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .simitem:hover{background:#2a2517}
+  .simitem.sel{border-color:var(--acc);background:#2e2818}
+  .simitem .num{color:var(--mut);font-size:12px;flex:none}
+  .simitem .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .simitem kbd{flex:none}
+  .lbl{font-size:10.5px;padding:1px 7px;border-radius:9px;border:1px solid #384153;color:#9fb0cc;flex:none}
+
+  .issuerow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+  .issuerow:hover,.issuerow.cur{background:var(--panel2)}
+  .issuerow .num{color:var(--mut);width:38px;flex:none}
+  .issuerow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .issuerow .upd{color:var(--mut);font-size:12px;flex:none}
+
+  .donebox{display:flex;flex-direction:column;align-items:center;gap:10px;padding:26px 20px;text-align:center}
+  .donebox .big{width:44px;height:44px;border-radius:50%;background:#173226;color:var(--ok);display:flex;align-items:center;justify-content:center}
+  .sentlist{width:100%;border-top:1px solid var(--line);margin-top:8px;padding-top:8px}
+  .sentrow{display:flex;gap:8px;align-items:center;padding:5px 6px;color:var(--mut);font-size:12.5px}
+  .sentrow .t{flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
+
+  .statusline{display:flex;align-items:center;gap:10px;color:var(--mut)}
+
+  /* overlay (repo picker) */
+  #overlay{position:fixed;inset:0;background:rgba(6,8,10,.6);display:none;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:50}
+  #overlay.show{display:flex}
+  #overlay .box{width:440px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.6);overflow:hidden}
+  #overlay input{width:100%;border:none;border-bottom:1px solid var(--line);border-radius:0;padding:12px 14px;background:var(--panel)}
+  #overlay .list{max-height:300px;overflow:auto}
+  .repoitem{display:flex;align-items:center;gap:9px;padding:9px 14px;cursor:pointer}
+  .repoitem.cur{background:var(--panel2)}
+  .repoitem.dis{opacity:.45;cursor:not-allowed}
+  .repoitem .n{flex:1}
+  .repoitem b{color:var(--acc2);font-weight:600}
+
+  /* ============ Variant A: Palette ============ */
+  .vA{width:620px;max-height:82vh}
+  .vA header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .vA .repopill{display:flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);border-radius:16px;background:var(--panel2);font-size:13px}
+  .vA .repopill:hover{border-color:#3a4150}
+  .vA .body{padding:14px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+  .vA textarea{border:none;background:none;padding:2px;font-size:15px;min-height:110px}
+  .vA footer{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+  .vA .rawchip{font-size:12.5px;color:var(--mut);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:8px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vA .draft input{width:100%;font-weight:600;font-size:15px;margin-bottom:8px}
+  .vA .draft textarea{width:100%;background:var(--panel2);border:1px solid var(--line);padding:10px;font-size:13px;font-family:Consolas,monospace;min-height:150px}
+  .vA .qs{border-top:1px dashed var(--line);padding-top:12px}
+  .vA .qs h4{font-size:12px;color:var(--mut);font-weight:600;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+
+  /* ============ Variant B: Split ============ */
+  .vB{width:960px;height:78vh}
+  .vB .toolbar{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line)}
+  .vB .cols{flex:1;display:flex;min-height:0}
+  .vB .left{width:44%;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px;gap:10px}
+  .vB .left textarea{flex:1;border:none;background:none;padding:2px;font-size:15px}
+  .vB .right{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+  .vB .right .scroll{flex:1;overflow:auto;padding:16px}
+  .vB .ghost{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#5b6270}
+  .vB .ghost .steps{display:flex;flex-direction:column;gap:6px;font-size:13px}
+  .vB .right input{width:100%;font-weight:600;font-size:15px;margin-bottom:8px}
+  .vB .right textarea{width:100%;background:var(--panel2);border:1px solid var(--line);padding:10px;font-size:13px;font-family:Consolas,monospace;min-height:140px}
+  .vB .rightfoot{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+  .vB .sk{height:14px;border-radius:4px;background:linear-gradient(90deg,#20242c,#2a2f3a,#20242c);background-size:200% 100%;animation:sh 1.2s linear infinite;margin-bottom:10px}
+  @keyframes sh{to{background-position:-200% 0}}
+  .vB .drawer{position:absolute;inset:0;background:var(--panel);display:flex;flex-direction:column}
+
+  /* ============ Variant C: Stepper ============ */
+  .vC{width:860px;height:80vh;flex-direction:row}
+  .vC .rail{width:200px;border-right:1px solid var(--line);padding:16px 10px;display:flex;flex-direction:column;gap:2px}
+  .vC .step{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:7px;color:var(--mut);font-size:13.5px}
+  .vC .step .dot{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11.5px;flex:none}
+  .vC .step.on{color:var(--txt);background:var(--panel2)}
+  .vC .step.on .dot{border-color:var(--acc);color:var(--acc)}
+  .vC .step.done{color:var(--txt)}
+  .vC .step.done .dot{border-color:var(--ok);color:var(--ok)}
+  .vC .railfoot{margin-top:auto;border-top:1px solid var(--line);padding-top:8px}
+  .vC .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .vC .mainscroll{flex:1;overflow:auto;padding:20px 24px}
+  .vC .mainfoot{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--line)}
+  .vC h2{font-size:17px;margin-bottom:14px}
+  .vC .ghpreview{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:6px}
+  .vC .ghpreview .gh-h{padding:12px 14px;background:var(--panel2);border-bottom:1px solid var(--line);font-weight:600;font-size:15px}
+  .vC .ghpreview .gh-b{padding:14px;font-size:13px;font-family:Consolas,monospace;white-space:pre-wrap;color:#c8cedb}
+  .vC textarea.cap{width:100%;min-height:160px;font-size:15px}
+
+  /* floating switcher bar */
+  #bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;
+    background:#0b0d10;border:1px solid #333a46;border-radius:20px;padding:4px 6px;box-shadow:0 8px 24px rgba(0,0,0,.6);z-index:99;font-size:12.5px}
+  #bar button{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--mut)}
+  #bar button:hover{background:#1c212a;color:var(--txt)}
+  #bar .lab{min-width:190px;text-align:center;color:var(--txt)}
+  #bar .lab span{color:var(--mut)}
+</style>
+
+<div id="desktop">
+  <div class="hint" id="summonhint"></div>
+  <div id="taskbar"><button id="trayduck" title="Quacket"></button><span style="color:var(--mut);font-size:12px">14:32</span></div>
+</div>
+<div id="stage"></div>
+<div id="overlay"></div>
+<div id="bar"></div>
+
+<script>
+/* ---------------- icons (inline SVG, stroke=currentColor) ---------------- */
+const I = (name, s=15) => {
+  const p = {
+    duck:'M8 3a4 4 0 0 1 4 4v1h2l-2 2.5c.6 4-2 6.5-6 6.5-3.5 0-6-2-6-5.5C0 8 2 6.5 4.5 6.5h.6A4 4 0 0 1 8 3Z',
+    zap:'M8.5 1.5 3 9h4l-1.5 5.5L11 7H7l1.5-5.5Z',
+    chev:'m5 6 3 3 3-3', chevR:'m6 4 4 4-4 4',
+    x:'m4 4 8 8M12 4l-8 8',
+    img:'M2.5 3.5h11v9h-11zM5.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm-3 4.5 3.5-3 2.5 2 2.5-2.5 2.5 2.5',
+    clip:'M12.5 7.5 8 12a3 3 0 0 1-4.24-4.24L9 2.5a2 2 0 0 1 2.83 2.83L7 10.2a1 1 0 0 1-1.41-1.4L10 4.5',
+    check:'m3.5 8.5 3 3 6-7',
+    ext:'M6.5 3.5h-3v9h9v-3M9.5 2.5h4v4M13 3 7.5 8.5',
+    list:'M5.5 4h8M5.5 8h8M5.5 12h8M2.5 4h.01M2.5 8h.01M2.5 12h.01',
+    search:'M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm7 2-3.5-3.5',
+    repo:'M4 2.5h8.5v11H5a1.5 1.5 0 0 1-1.5-1.5V4A1.5 1.5 0 0 1 5 2.5M4 10.5h8.5M6 5.5h4',
+    back:'m10 4-4 4 4 4',
+    lock:'M4.5 7.5v-2a3.5 3.5 0 0 1 7 0v2m-8.5 0h10v6h-10z',
+    msg:'M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z',
+    q:'M6 6a2 2 0 1 1 3 1.7c-.7.4-1 .8-1 1.8M8 12h.01'
+  }[name];
+  return `<svg width="${s}" height="${s}" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${name==='duck'?`<path d="${p}" fill="currentColor" stroke="none"/>`:`<path d="${p}"/>`}</svg>`;
+};
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------------- fake data ---------------- */
+const REPOS = [
+  {name:'c3lew/Quacket', push:true},
+  {name:'c3lew/dotfiles', push:true},
+  {name:'c3lew/blog-engine', push:true},
+  {name:'c3lew/side-scraper', push:true},
+  {name:'c3lew/recipe-box', push:true},
+  {name:'c3lew/old-portfolio', push:false, why:'archived'},
+  {name:'someorg/shared-lib', push:false, why:'read-only'},
+];
+const PROVIDERS = {
+  claude:{label:'Claude', models:{'sonnet':['low','medium','high'],'opus':['low','medium','high'],'haiku':[]}, cost:true},
+  codex:{label:'Codex', models:{'gpt-5.3-codex':['minimal','low','medium','high'],'gpt-5.3-codex-mini':['minimal','low','medium']}, cost:false},
+};
+const OPEN_ISSUES = [
+  {n:42, title:'Tray icon disappears after explorer.exe restarts', labels:['bug'], updated:'2d ago'},
+  {n:38, title:'Global hotkey silently fails when another app grabbed it', labels:['bug'], updated:'5d ago'},
+  {n:35, title:'Add dark/light theme toggle', labels:['enhancement'], updated:'1w ago'},
+  {n:31, title:'Paste of very large screenshots freezes the input for ~1s', labels:['bug'], updated:'2w ago'},
+  {n:27, title:'Remember window position between summons', labels:['enhancement'], updated:'3w ago'},
+];
+const REFINE_STAGES = ['Invoking claude…','Refining your report…','Checking similar open issues…'];
+
+/* ---------------- shared state + actions ---------------- */
+let S;
+function freshState(){
+  return {
+    view:'capture', stage:'input',           // stage: input | refining | draft | done
+    repo:REPOS[0], provider:'claude', model:'sonnet', effort:'medium',
+    raw:'', images:[], status:'',
+    draft:null, questions:[], similar:[], simSel:null,
+    result:null, sent:S? S.sent : [], issueCur:0, cstep:1,
+  };
+}
+function effortsFor(){ return PROVIDERS[S.provider].models[S.model] || []; }
+
+function fakeRefine(){
+  S.stage='refining'; S.status=REFINE_STAGES[0]; render();
+  let i=0;
+  const tick=setInterval(()=>{ i++; if(i<REFINE_STAGES.length){S.status=REFINE_STAGES[i];render();} },1200);
+  setTimeout(()=>{
+    clearInterval(tick);
+    const first=(S.raw.trim().split('\n')[0]||'Something went wrong').slice(0,70);
+    S.draft={
+      title:first.charAt(0).toUpperCase()+first.slice(1),
+      body:`## Repro\n1. Summon the capture window\n2. ${esc(S.raw.trim().slice(0,90))||'…'}\n\n## Expected\nIt keeps working.\n\n## Actual\nIt does not.`+(S.images.length?`\n\n(${S.images.length} screenshot${S.images.length>1?'s':''} attached)`:'')
+    };
+    S.questions=[
+      {q:'Which OS / Windows version were you on?', a:''},
+      {q:'Does it reproduce every time, or intermittently?', a:''},
+    ];
+    S.similar=[OPEN_ISSUES[0],OPEN_ISSUES[1]]; S.simSel=null;
+    S.stage='draft'; if(S.cstep===1)S.cstep=2; render();
+    setTimeout(()=>{const t=document.querySelector('[data-first-q]'); if(t)t.focus();},30);
+  },3600);
+}
+function doSubmit(){
+  S.stage='submitting'; render();
+  setTimeout(()=>{
+    const comment=S.simSel!=null;
+    S.result={mode:comment?'comment':'issue', n:comment?S.simSel:123, repo:S.repo.name,
+      title:comment?OPEN_ISSUES.find(i=>i.n===S.simSel).title:S.draft.title,
+      cost:PROVIDERS[S.provider].cost?'$0.021':null, tokens:'3.1k'};
+    S.sent.unshift(S.result);
+    S.stage='done'; S.cstep=4; render();
+  },1100);
+}
+function resetDraft(){ const sent=S.sent; S=freshState(); S.sent=sent; render();
+  setTimeout(()=>{const t=document.querySelector('textarea'); if(t)t.focus();},30); }
+
+/* ---------------- shared fragments ---------------- */
+function modelPickerHTML(){
+  const opts=Object.entries(PROVIDERS).map(([pk,p])=>
+    `<optgroup label="${p.label}">`+Object.keys(p.models).map(m=>
+      `<option value="${pk}:${m}" ${S.provider===pk&&S.model===m?'selected':''}>${p.label} · ${m}</option>`).join('')+`</optgroup>`).join('');
+  const efforts=effortsFor();
+  return `<select data-model style="font-size:12.5px">${opts}</select>`+
+    (efforts.length?`<select data-effort style="font-size:12.5px" title="Reasoning effort">${efforts.map(e=>`<option ${e===S.effort?'selected':''}>${e}</option>`).join('')}</select>`:'');
+}
+function thumbsHTML(){
+  if(!S.images.length) return '';
+  return `<div class="thumbs">`+S.images.map((im,i)=>
+    `<div class="thumb"><img src="${im.url}"><button class="rm" data-act="rmimg" data-i="${i}" title="Remove">${I('x',10)}</button></div>`).join('')+`</div>`;
+}
+function questionsHTML(){
+  return S.questions.map((q,i)=>`<div class="qrow">
+    <label>${I('q',13)} ${esc(q.q)}<span class="opt">optional</span></label>
+    <input data-q="${i}" ${i===0?'data-first-q':''} value="${esc(q.a)}" placeholder="Leave blank to skip">
+  </div>`).join('');
+}
+function similarHTML(){
+  if(!S.similar.length) return '';
+  return `<div class="simcard">
+    <h4>${I('msg',13)} Looks similar to an open issue — add yours as a comment instead?</h4>
+    ${S.similar.map((it,i)=>`<div class="simitem ${S.simSel===it.n?'sel':''}" data-act="sim" data-n="${it.n}">
+      <span class="num">#${it.n}</span><span class="t">${esc(it.title)}</span><span class="lbl">${it.labels[0]}</span><kbd>Ctrl+${i+1}</kbd>
+    </div>`).join('')}
+    ${S.simSel!=null?`<div style="margin-top:8px;font-size:12.5px;color:var(--mut)">Will comment on <b style="color:var(--txt)">#${S.simSel}</b> — <button class="btn ghost" data-act="sim" data-n="${S.simSel}" style="padding:0;text-decoration:underline">file as a new issue instead</button></div>`:''}
+  </div>`;
+}
+function submitLabel(){ return S.simSel!=null?`Comment on #${S.simSel}`:'Submit issue'; }
+function doneHTML(){
+  const r=S.result;
+  return `<div class="donebox">
+    <div class="big">${I('check',22)}</div>
+    <div style="font-size:15px;font-weight:600">${r.mode==='comment'?`Commented on #${r.n}`:`Issue #${r.n} filed`}</div>
+    <div style="color:var(--mut)">${esc(r.title)}<br>${r.repo} · ${r.tokens} tokens${r.cost?` · ~${r.cost}`:''}</div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn" data-act="open">${I('ext',13)} Open in browser</button>
+      <button class="btn pri" data-act="new">New report <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+N</kbd></button>
+    </div>
+    ${S.sent.length?`<div class="sentlist"><div style="font-size:11.5px;color:var(--mut);text-align:left;margin-bottom:4px">RECENTLY SENT</div>
+      ${S.sent.slice(0,4).map(s=>`<div class="sentrow">${I(s.mode==='comment'?'msg':'check',12)}<span class="t">${s.mode==='comment'?'#'+s.n+' (comment)':'#'+s.n} ${esc(s.title)}</span><button class="iconbtn" data-act="open" title="Open in browser" style="width:24px;height:24px">${I('ext',12)}</button></div>`).join('')}</div>`:''}
+  </div>`;
+}
+function issueRowsHTML(){
+  return OPEN_ISSUES.map((it,i)=>`<div class="issuerow ${i===S.issueCur?'cur':''}" data-act="openissue" data-i="${i}">
+    <span class="num">#${it.n}</span><span class="t">${esc(it.title)}</span><span class="lbl">${it.labels[0]}</span><span class="upd">${it.updated}</span>
+  </div>`).join('');
+}
+function statusHTML(){ return `<div class="statusline"><div class="spin"></div><span>${S.status}</span><span style="flex:1"></span><span style="font-size:12px">Esc to cancel</span></div>`; }
+
+/* ---------------- Variant A: Palette ---------------- */
+function renderA(root){
+  const el=document.createElement('div'); el.className='panel vA';
+  let body,foot;
+  if(S.view==='issues'){
+    body=`<div style="overflow:auto">${issueRowsHTML()}</div>`;
+    foot=`<span style="color:var(--mut);font-size:12px">${OPEN_ISSUES.length} open · <kbd>↑↓</kbd> select · <kbd>Enter</kbd> open in browser</span><span style="flex:1"></span><button class="btn ghost" data-act="backcapture">${I('back',13)} Back <kbd>Esc</kbd></button>`;
+  } else if(S.stage==='input'||S.stage==='refining'){
+    const busy=S.stage==='refining';
+    body=`<textarea data-raw placeholder="What broke? Type it raw — paste screenshots right here." ${busy?'readonly style="opacity:.5"':''}>${esc(S.raw)}</textarea>${thumbsHTML()}`;
+    foot=busy?statusHTML():
+      `<button class="iconbtn" data-act="attach" title="Attach sample image">${I('clip')}</button>
+       ${modelPickerHTML()}<span style="flex:1"></span>
+       <button class="btn pri" data-act="refine" ${S.raw.trim()?'':'disabled'}>${I('zap',13)} Refine <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd></button>`;
+  } else if(S.stage==='draft'||S.stage==='submitting'){
+    body=`<div class="rawchip" title="${esc(S.raw)}">Raw: ${esc(S.raw.trim().slice(0,80))}</div>
+      <div class="draft"><input data-title value="${esc(S.draft.title)}"><textarea data-body>${esc(S.draft.body)}</textarea></div>
+      <div class="qs"><h4>${I('q',13)} A couple of details would help — all optional</h4>${questionsHTML()}</div>
+      ${similarHTML()}`;
+    foot=`<button class="btn ghost" data-act="backinput">${I('back',13)} Edit raw</button><span style="flex:1"></span>
+      <button class="btn pri" data-act="submit" ${S.stage==='submitting'?'disabled':''}>${S.stage==='submitting'?'<div class="spin"></div> Sending…':`${submitLabel()} <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd>`}</button>`;
+  } else { body=doneHTML(); foot=`<span style="color:var(--mut);font-size:12px">Esc hides the window · your draft is auto-saved</span>`; }
+  el.innerHTML=`
+    <header>
+      <button class="repopill" data-act="repo" title="Switch repo">${I('repo',13)} ${S.repo.name} ${I('chev',12)} <kbd>Ctrl+R</kbd></button>
+      <span style="flex:1"></span>
+      <button class="iconbtn" data-act="issues" title="Open issues in this repo">${I('list')}</button>
+      <button class="iconbtn" data-act="hide" title="Hide window">${I('x')}</button>
+    </header>
+    <div class="body">${body}</div><footer>${foot}</footer>`;
+  root.appendChild(el);
+}
+
+/* ---------------- Variant B: Split ---------------- */
+function renderB(root){
+  const el=document.createElement('div'); el.className='panel vB';
+  const busy=S.stage==='refining';
+  let right;
+  if(S.stage==='input') right=`<div class="ghost">${I('zap',26)}
+      <div style="font-size:15px;color:var(--txt)">Refined draft appears here</div>
+      <div class="steps"><span>1 · Type what happened on the left</span><span>2 · <b style="color:var(--txt)">Refine</b> turns it into a clean ticket</span><span>3 · Answer (or skip) follow-ups, then submit</span></div></div>`;
+  else if(busy) right=`<div class="scroll"><div style="margin-bottom:16px">${statusHTML()}</div>
+      <div class="sk" style="width:55%"></div><div class="sk" style="width:90%"></div><div class="sk" style="width:82%"></div><div class="sk" style="width:40%"></div><div class="sk" style="width:75%;margin-top:22px"></div><div class="sk" style="width:65%"></div></div>`;
+  else if(S.stage==='draft'||S.stage==='submitting') right=`<div class="scroll">
+      <input data-title value="${esc(S.draft.title)}"><textarea data-body>${esc(S.draft.body)}</textarea>
+      <div style="margin-top:14px"><div style="font-size:12px;color:var(--mut);font-weight:600;margin-bottom:10px">FOLLOW-UPS — ALL OPTIONAL</div>${questionsHTML()}</div>
+      ${similarHTML()}</div>
+      <div class="rightfoot"><span style="color:var(--mut);font-size:12px">Edits on the left re-enable Refine</span><span style="flex:1"></span>
+        <button class="btn pri" data-act="submit" ${S.stage==='submitting'?'disabled':''}>${S.stage==='submitting'?'<div class="spin"></div> Sending…':`${submitLabel()} <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd>`}</button></div>`;
+  else right=`<div class="scroll">${doneHTML()}</div>`;
+  el.innerHTML=`
+    <div class="toolbar">
+      <button class="btn" data-act="repo" style="font-size:13px">${I('repo',13)} ${S.repo.name} ${I('chev',12)}</button><kbd>Ctrl+R</kbd>
+      <span style="flex:1"></span>${modelPickerHTML()}
+      <button class="btn ghost" data-act="issues">${I('list',14)} Open issues</button>
+      <button class="iconbtn" data-act="hide" title="Hide window">${I('x')}</button>
+    </div>
+    <div class="cols">
+      <div class="left">
+        <div style="font-size:12px;color:var(--mut);font-weight:600">RAW INPUT</div>
+        <textarea data-raw placeholder="Type what happened. Paste screenshots right here." ${busy?'readonly style="opacity:.5"':''}>${esc(S.raw)}</textarea>
+        ${thumbsHTML()}
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="iconbtn" data-act="attach" title="Attach sample image">${I('clip')}</button><span style="flex:1"></span>
+          <button class="btn pri" data-act="refine" ${S.raw.trim()&&!busy&&S.stage!=='submitting'?'':'disabled'}>${I('zap',13)} Refine <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd></button>
+        </div>
+      </div>
+      <div class="right">${right}
+        ${S.view==='issues'?`<div class="drawer">
+          <div style="display:flex;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)">
+            <span style="font-weight:600;font-size:13px">Open issues · ${S.repo.name}</span><span style="flex:1"></span>
+            <button class="btn ghost" data-act="backcapture">${I('x',13)} Close <kbd>Esc</kbd></button></div>
+          <div style="overflow:auto;flex:1">${issueRowsHTML()}</div></div>`:''}
+      </div>
+    </div>`;
+  root.appendChild(el);
+}
+
+/* ---------------- Variant C: Stepper ---------------- */
+function renderC(root){
+  const el=document.createElement('div'); el.className='panel vC';
+  const step=S.view==='issues'?0:S.cstep;
+  const stepCls=n=>step===n?'on':(step>n?'done':'');
+  const dot=n=>step>n?I('check',11):n;
+  let main,foot='';
+  if(S.view==='issues'){
+    main=`<h2>Open issues · ${S.repo.name}</h2><div style="border:1px solid var(--line);border-radius:8px;overflow:hidden">${issueRowsHTML()}</div>`;
+    foot=`<span style="color:var(--mut);font-size:12px"><kbd>↑↓</kbd> select · <kbd>Enter</kbd> open in browser · <kbd>Esc</kbd> back</span>`;
+  } else if(S.stage==='refining'){
+    main=`<h2>Refining…</h2>${statusHTML()}`;
+  } else if(step===1){
+    main=`<h2>What happened?</h2>
+      <div style="display:flex;gap:10px;margin-bottom:12px;align-items:center">
+        <button class="btn" data-act="repo">${I('repo',13)} ${S.repo.name} ${I('chev',12)}</button><kbd>Ctrl+R</kbd>
+        <span style="flex:1"></span>${modelPickerHTML()}</div>
+      <textarea class="cap" data-raw placeholder="Type it raw — paste screenshots right here.">${esc(S.raw)}</textarea>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:flex-start">
+        <button class="iconbtn" data-act="attach" title="Attach sample image">${I('clip')}</button>${thumbsHTML()}</div>`;
+    foot=`<span style="flex:1"></span><button class="btn pri" data-act="refine" ${S.raw.trim()?'':'disabled'}>Continue — Refine ${I('chevR',13)} <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd></button>`;
+  } else if(step===2){
+    main=`<h2>Anything to add? <span style="font-size:13px;color:var(--mut);font-weight:400">(everything here is optional)</span></h2>${questionsHTML()}`;
+    foot=`<button class="btn ghost" data-act="tostep1">${I('back',13)} Back</button><span style="flex:1"></span>
+      <button class="btn ghost" data-act="tostep3">Skip all</button>
+      <button class="btn pri" data-act="tostep3">Continue ${I('chevR',13)} <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd></button>`;
+  } else if(step===3){
+    main=`<h2>Review &amp; submit</h2>
+      <div class="ghpreview"><div class="gh-h" contenteditable="true" data-ce-title>${esc(S.draft.title)}</div><div class="gh-b" contenteditable="true" data-ce-body>${esc(S.draft.body)}</div></div>
+      <div style="font-size:12px;color:var(--mut)">Click the preview to edit · filing to <b style="color:var(--txt)">${S.repo.name}</b> via ${PROVIDERS[S.provider].label} · ${S.model}</div>
+      ${similarHTML()}`;
+    foot=`<button class="btn ghost" data-act="tostep2">${I('back',13)} Back</button><span style="flex:1"></span>
+      <button class="btn pri" data-act="submit" ${S.stage==='submitting'?'disabled':''}>${S.stage==='submitting'?'<div class="spin"></div> Sending…':`${submitLabel()} <kbd style="background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.2);color:#1a1408">Ctrl+⏎</kbd>`}</button>`;
+  } else { main=doneHTML(); }
+  el.innerHTML=`
+    <div class="rail">
+      <div style="display:flex;align-items:center;gap:8px;padding:0 8px 14px;color:var(--acc)">${I('duck',18)}<b style="color:var(--txt)">Quacket</b></div>
+      <div class="step ${stepCls(1)}"><span class="dot">${dot(1)}</span>Capture</div>
+      <div class="step ${stepCls(2)}"><span class="dot">${dot(2)}</span>Clarify</div>
+      <div class="step ${stepCls(3)}"><span class="dot">${dot(3)}</span>Review</div>
+      <div class="railfoot">
+        <button class="step ${S.view==='issues'?'on':''}" data-act="issues" style="width:100%">${I('list',15)} Open issues</button>
+        <button class="step" data-act="hide" style="width:100%">${I('x',15)} Hide window</button>
+      </div>
+    </div>
+    <div class="main"><div class="mainscroll">${main}</div>${foot?`<div class="mainfoot">${foot}</div>`:''}</div>`;
+  root.appendChild(el);
+}
+
+/* ---------------- repo picker overlay ---------------- */
+let pickCur=0;
+function openRepoPicker(){
+  const ov=document.getElementById('overlay'); pickCur=0;
+  const draw=q=>{
+    const rx=[...q.toLowerCase()].map(c=>c.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('.*?');
+    const hits=REPOS.filter(r=>new RegExp(rx).test(r.name.toLowerCase()));
+    const usable=hits.filter(r=>r.push);
+    if(pickCur>=usable.length)pickCur=Math.max(0,usable.length-1);
+    ov.querySelector('.list').innerHTML=hits.map(r=>{
+      const idx=usable.indexOf(r);
+      return `<div class="repoitem ${r.push?'':'dis'} ${idx===pickCur?'cur':''}" data-repo="${r.name}" ${r.push?'':'title="Screenshots need push access — this repo is '+r.why+'"'}>
+        ${I('repo',13)}<span class="n">${esc(r.name)}</span>${r.push?'':`<span class="lbl">${I('lock',10)} ${r.why}</span>`}</div>`;
+    }).join('')||`<div style="padding:14px;color:var(--mut)">No repo matches “${esc(q)}”</div>`;
+  };
+  ov.innerHTML=`<div class="box"><input placeholder="Switch repo — type to filter…"><div class="list"></div>
+    <div style="padding:8px 14px;border-top:1px solid var(--line);color:var(--mut);font-size:11.5px">Greyed-out repos can't take screenshot attachments (no push access) · <kbd>↑↓</kbd> <kbd>Enter</kbd> <kbd>Esc</kbd></div></div>`;
+  ov.classList.add('show');
+  const inp=ov.querySelector('input'); draw(''); inp.focus();
+  inp.oninput=()=>{pickCur=0;draw(inp.value)};
+  inp.onkeydown=e=>{
+    const usable=[...ov.querySelectorAll('.repoitem:not(.dis)')];
+    if(e.key==='ArrowDown'){pickCur=Math.min(pickCur+1,usable.length-1);draw(inp.value);e.preventDefault();}
+    if(e.key==='ArrowUp'){pickCur=Math.max(pickCur-1,0);draw(inp.value);e.preventDefault();}
+    if(e.key==='Enter'&&usable[pickCur]){pick(usable[pickCur].dataset.repo);}
+    if(e.key==='Escape'){ov.classList.remove('show');e.stopPropagation();}
+  };
+  ov.onclick=e=>{
+    const it=e.target.closest('.repoitem:not(.dis)');
+    if(it)pick(it.dataset.repo); else if(e.target===ov)ov.classList.remove('show');
+  };
+  const pick=name=>{S.repo=REPOS.find(r=>r.name===name);ov.classList.remove('show');render();};
+}
+
+/* ---------------- summon simulation ---------------- */
+let hidden=false;
+function hideToTray(){ hidden=true; document.getElementById('stage').style.display='none';
+  document.getElementById('bar').style.display='none';
+  const d=document.getElementById('desktop'); d.classList.add('show');
+  document.getElementById('summonhint').innerHTML=`Window hidden to tray — press <kbd>Ctrl+Shift+Q</kbd> or click the duck ${I('duck',14)} below to summon it`;
+}
+function summon(){ hidden=false; document.getElementById('desktop').classList.remove('show');
+  document.getElementById('stage').style.display='flex'; document.getElementById('bar').style.display='flex';
+  render(); setTimeout(()=>{const t=document.querySelector('textarea,input');if(t)t.focus();},30); }
+
+/* ---------------- render + wiring ---------------- */
+const VARIANTS={A:{name:'Palette — morphing panel',fn:renderA},B:{name:'Split — input | draft',fn:renderB},C:{name:'Stepper — wizard',fn:renderC}};
+let V=(location.hash.replace('#','')||'A').toUpperCase(); if(!VARIANTS[V])V='A';
+
+function render(){
+  const root=document.getElementById('stage'); root.innerHTML='';
+  VARIANTS[V].fn(root);
+  document.getElementById('bar').innerHTML=`
+    <button data-nav="-1" title="Previous variant">${I('back',13)}</button>
+    <div class="lab">${V} — <span>${VARIANTS[V].name}</span></div>
+    <button data-nav="1" title="Next variant">${I('chevR',13)}</button>`;
+}
+function setVariant(v){ V=v; location.hash=v; render(); }
+
+document.getElementById('bar').addEventListener('click',e=>{
+  const b=e.target.closest('[data-nav]'); if(!b)return;
+  const ks=Object.keys(VARIANTS); setVariant(ks[(ks.indexOf(V)+(+b.dataset.nav)+ks.length)%ks.length]);
+});
+document.getElementById('trayduck').innerHTML=I('duck',18);
+document.getElementById('trayduck').onclick=summon;
+
+/* delegated actions */
+document.getElementById('stage').addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]'); if(!b)return;
+  const act=b.dataset.act;
+  if(act==='repo')openRepoPicker();
+  else if(act==='attach'){S.images.push({url:sampleImg()});render();}
+  else if(act==='rmimg'){S.images.splice(+b.dataset.i,1);render();}
+  else if(act==='refine')fakeRefine();
+  else if(act==='submit')doSubmit();
+  else if(act==='sim'){const n=+b.dataset.n;S.simSel=S.simSel===n?null:n;render();}
+  else if(act==='issues'){S.view=S.view==='issues'?'capture':'issues';render();}
+  else if(act==='backcapture'){S.view='capture';render();}
+  else if(act==='backinput'){S.stage='input';S.cstep=1;render();}
+  else if(act==='tostep1'){S.cstep=1;render();}
+  else if(act==='tostep2'){S.cstep=2;render();}
+  else if(act==='tostep3'){S.cstep=3;render();}
+  else if(act==='new')resetDraft();
+  else if(act==='open')alert('(prototype) would open the issue in your browser');
+  else if(act==='openissue')alert('(prototype) would open #'+OPEN_ISSUES[+b.dataset.i].n+' in your browser');
+  else if(act==='hide')hideToTray();
+});
+/* inputs */
+document.getElementById('stage').addEventListener('input',e=>{
+  const t=e.target;
+  if(t.dataset.raw!==undefined)S.raw=t.value;
+  if(t.dataset.title!==undefined)S.draft.title=t.value;
+  if(t.dataset.body!==undefined)S.draft.body=t.value;
+  if(t.dataset.q!==undefined)S.questions[+t.dataset.q].a=t.value;
+  if(t.dataset.ceTitle!==undefined)S.draft.title=t.textContent;
+  if(t.dataset.ceBody!==undefined)S.draft.body=t.textContent;
+  if(t.dataset.raw!==undefined){ /* keep refine button state fresh */
+    const btn=document.querySelector('[data-act="refine"]'); if(btn)btn.disabled=!S.raw.trim();
+  }
+});
+document.getElementById('stage').addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.model!==undefined){const [p,m]=t.value.split(':');S.provider=p;S.model=m;
+    const ef=effortsFor();S.effort=ef.includes('medium')?'medium':(ef[0]||'');render();}
+  if(t.dataset.effort!==undefined)S.effort=t.value;
+});
+/* real clipboard paste */
+document.addEventListener('paste',e=>{
+  if(hidden)return;
+  const f=[...(e.clipboardData?.files||[])].find(f=>f.type.startsWith('image/'));
+  if(f){S.images.push({url:URL.createObjectURL(f)});render();}
+});
+/* global keys */
+document.addEventListener('keydown',e=>{
+  if(hidden){ if(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='q'){summon();e.preventDefault();} return; }
+  if(document.getElementById('overlay').classList.contains('show'))return;
+  const inField=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)||document.activeElement.isContentEditable;
+  if(e.ctrlKey&&e.key==='Enter'){
+    if(S.view==='capture'){
+      if(S.stage==='input'&&S.raw.trim())fakeRefine();
+      else if(S.stage==='draft'){ if(V==='C'&&S.cstep<3){S.cstep++;render();} else doSubmit(); }
+    } e.preventDefault();
+  }
+  else if(e.ctrlKey&&e.key.toLowerCase()==='r'){openRepoPicker();e.preventDefault();}
+  else if(e.ctrlKey&&e.key.toLowerCase()==='n'&&S.stage==='done'){resetDraft();e.preventDefault();}
+  else if(e.ctrlKey&&['1','2','3'].includes(e.key)&&S.stage==='draft'){
+    const it=S.similar[+e.key-1]; if(it){S.simSel=S.simSel===it.n?null:it.n;render();} e.preventDefault();
+  }
+  else if(e.key==='Escape'){
+    if(S.view==='issues'){S.view='capture';render();}
+    else if(S.stage==='refining'){S.stage='input';S.cstep=1;render();}
+    else hideToTray();
+  }
+  else if(!inField&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){
+    const ks=Object.keys(VARIANTS); setVariant(ks[(ks.indexOf(V)+(e.key==='ArrowRight'?1:-1)+ks.length)%ks.length]);
+  }
+  else if(!inField&&S.view==='issues'&&(e.key==='ArrowDown'||e.key==='ArrowUp')){
+    S.issueCur=Math.max(0,Math.min(OPEN_ISSUES.length-1,S.issueCur+(e.key==='ArrowDown'?1:-1)));render();e.preventDefault();
+  }
+  else if(!inField&&S.view==='issues'&&e.key==='Enter'){alert('(prototype) would open #'+OPEN_ISSUES[S.issueCur].n+' in your browser');}
+});
+/* sample screenshot generator (canvas → dataURL) */
+function sampleImg(){
+  const c=document.createElement('canvas');c.width=296;c.height=208;const x=c.getContext('2d');
+  x.fillStyle='#22262e';x.fillRect(0,0,296,208);x.fillStyle='#2f3540';x.fillRect(0,0,296,28);
+  x.fillStyle='#f2555a';x.beginPath();x.arc(16,14,5,0,7);x.fill();
+  x.fillStyle='#8b93a3';x.font='12px Segoe UI';x.fillText('error: something exploded at line 42',14,64);
+  x.strokeStyle='#e8a33d';x.lineWidth=3;x.beginPath();x.ellipse(120,60,110,18,0,0,7);x.stroke();
+  return c.toDataURL();
+}
+
+S=freshState();
+window.addEventListener('hashchange',()=>{const v=(location.hash.replace('#','')||'A').toUpperCase();if(VARIANTS[v]&&v!==V){V=v;render();}});
+render();
+setTimeout(()=>{const t=document.querySelector('textarea');if(t)t.focus();},30);
+</script>
