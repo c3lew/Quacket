@@ -1,0 +1,58 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Quacket",
+  "identifier": "com.quacket.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Quacket",
+        "width": 560,
+        "height": 680,
+        "center": true,
+        "resizable": false,
+        "visible": false,
+        "skipTaskbar": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://quacket.invalid/updates/{{target}}/{{arch}}/{{current_version}}"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI3MDNBODk1N0U1MDZBQUQKUldTdGFsQitsYWdESndHOWpKNEkxTGgxOFllM1MvQW5xcHpOMHB3TDRmcjQ3R1J2UkpOajNPK2IK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

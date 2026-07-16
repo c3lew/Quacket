@@ -1,1 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Tooling artifacts
 .playwright-mcp/
+
+# Updater signing key. The PUBLIC key belongs in tauri.conf.json and is committed;
+# the private key never is. Regenerate for real releases.
+*.key

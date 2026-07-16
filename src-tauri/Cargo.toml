@@ -1,0 +1,55 @@
+[package]
+name = "quacket"
+version = "0.1.0"
+description = "Turn a messy observation into a clean GitHub issue."
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+# main.rs is a two-line shim so the app entrypoint stays unit-testable from the lib.
+name = "quacket_lib"
+crate-type = ["lib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `tray-icon` feature: Quacket is tray-resident. See docs/research/tauri-v2-capability-check.md.
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-store = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# NOT tauri-plugin-shell. Both halves of the ProcessRunner seam are `src/proc.rs`
+# instead, because the plugin cannot close a child's stdin (no `stdin_close` IPC
+# command exists) and `execute()` yields no pid to kill on a timeout. Both CLIs
+# need stdin at EOF to answer correctly and neither has a built-in timeout, so the
+# plugin could only ever produce silently wrong answers and orphaned processes.
+# The plugin's capability scope is re-implemented as `proc::ALLOWED`.
+
+# tauri#14088: tray-icon < 0.21.2 crashes after all windows have been hidden for a
+# long time — Quacket's entire usage pattern. tauri 2.11.5 pulls tray-icon 0.24.1
+# transitively, which is past the fix; a direct dep here would NOT floor tauri's own
+# copy (it just resolves a second, unused one), so the guard is Cargo.lock + this note.
+# If tauri is ever downgraded, re-check: cargo tree -i tray-icon@<ver> -e normal
+
+# The job object behind `proc::tree` — a killed `.cmd` shim (which is how npm ships
+# codex) otherwise leaves the real CLI running. Version matches the copy tauri
+# already pulls in, so this resolves to one crate rather than a second.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,612 @@
+# Quacket
+
+A desktop bug-reporting palette for Windows. Press a global hotkey anywhere, dump a
+half-formed complaint and a screenshot into a small window, and Quacket uses a
+locally-installed AI CLI to refine it into a structured GitHub issue and file it
+with `gh`.
+
+The point is the **capture**: bug reports die because filing one interrupts what you
+were doing. Quacket makes filing cost one hotkey and one paragraph. It brings no AI
+API key and no server — it drives the `claude` / `codex` CLIs the user has already
+installed and authenticated, and files through the user's own `gh`.
+
+## Status
+
+All five gates are green (see [Running it](#running-it)). The stdin blocker that
+made submit structurally dead is **fixed**: Quacket spawns through its own Rust
+command, which closes stdin and can kill a timed-out child (proven against real
+processes). Round 3 fixed the two defects that made the app unusable rather than
+merely wrong — a first run could never reach the capture box, and a dropped
+screenshot from outside `$HOME` was denied by the fs scope.
+
+**Round 4 was the first time any of this met a live CLI, and that is what round 4
+is for.** Three things came back that no test in this repo could have found, and
+one of them was a blocker:
+
+- **Every Codex refine failed to spawn on Windows** — the prompt went as argv, and
+  Rust refuses to spawn a `.cmd` shim (which is how npm ships `codex`) with any
+  newline-containing argument. The prompt is multi-line by construction, so this
+  fired on **100%** of Codex refines. Fixed: the prompt goes on stdin.
+- **`--ignore-user-config` was missing** though the spec pins it, so the user's
+  `~/.codex/config.toml` steered every refine — including spawning their `notify`
+  hook. Fixed; measured 26 226 → 20 418 input tokens.
+- Two of the three "inferred from docs, not verified" adapter assumptions came back
+  **CONFIRMED**; one came back a **MISMATCH** and is fixed. See
+  [What live verification settled](#what-live-verification-settled).
+
+Round 4 also closed the last data-loss hole in the image path: **both** producers of
+it, intake and annotation, now write bytes before state (blockers #5 and #5b).
+
+**Round 5 was about one defect that keeps moving, and it is now structurally
+prevented rather than fixed again.** A `<select>` whose `value` matches no
+`<option>` shows `option[0]`, reads it back, and fires no change when the user
+picks what is on screen. It had been found and fixed FOUR times in three rounds,
+each fix scoped to the file it was found in — so each round found it in the next
+file. It is the platform primitive's default, not carelessness, so every new
+surface inherits it free. `Picker.tsx` is now the only file allowed to write one
+and `raw-select.guard.test.ts` fails the build on a second (AST-based, so the
+repo's prose about `<select>` does not trip it). Round 5 also fixed the
+first-run card discarding its own effort pick, and made `inFlight` the draft
+store's own bracket instead of a boolean every caller asserted.
+
+**The same "fixed per-file, so it moved" shape was found a third time during
+integration, one layer below the UI**, and is fixed with the two halves joined:
+the card's effort reached `services.refine`, and the adapters turned `effort`
+into argv, but the single line carrying it between them
+(`components/services.ts`) was executed by **no test** — `createUiServices` is
+built only in `main.tsx`, and `App.test.tsx` imports just its type. Replacing it
+with `effort: null` silently disabled reasoning effort app-wide, on every refine,
+for both providers, and left the whole suite as it then stood (669 tests) and
+`tsc` green. Measured, then pinned by `components/services.test.ts` (blocker #8).
+
+What is left unsettled is named below and nowhere else. Nothing here is
+aspirational — if it is described here, it exists, and every number was measured.
+
+## The two seams, and why they are the only ones
+
+Quacket's core is pure TypeScript that **cannot touch the machine directly**.
+Everything the outside world provides arrives through exactly two injected ports:
+
+| Port | File | Implementation |
+| --- | --- | --- |
+| `ProcessRunner` | `src/core/runner.ts` | `src/app/runner.ts` → our own `src-tauri/src/proc.rs` |
+| `FileStore` | `src/core/files.ts` | `src/app/files.ts` (tauri-plugin-fs) |
+
+**Why these two and nothing else.** Quacket's entire outside world is three CLIs
+(`claude`, `codex`, `gh`) and a disk. Processes were always going to need a seam —
+you cannot unit-test "did we pass `-s read-only`" against a real `codex`. The
+filesystem needed one for a second reason: **the core runs inside a WebView2
+renderer, which has no Node**. `node:fs` imports type-check happily and then fail
+at `vite build`, or worse, at runtime. Injecting both ports means core modules are
+honest about what they need, tests drive real behaviour with no host mocking, and
+the files that know Tauri exists are quarantined at the edge — `src/app/` plus
+`src/ui/main.tsx`, which is the platform entry point. Nothing under `src/core/`, and
+no `.tsx` below `main.tsx`, imports a host API.
+
+**Why a port rather than importing `@tauri-apps/plugin-fs` in core.** That swaps one
+hard host dependency for another and drags Tauri IPC mocking into every test that
+currently does honest disk I/O. Under injection, `src/core/drafts/store.test.ts`
+writes real files to a real temp dir through `nodeFiles` — a draft that survives a
+simulated crash actually round-tripped a disk.
+
+Two deliberate consequences:
+
+- **`FileStore` is not a mirror of `node:fs`.** Reads return `null` for "not there"
+  instead of throwing a host-specific errno, because core must never sniff
+  `e.code === 'ENOENT'` (plugin-fs does not speak Node's dialect). `remove` is
+  recursive and idempotent. Every caller wanted both anyway.
+- **`joinPath` is pure and always emits `/`.** Windows accepts forward slashes at
+  the syscall level in both Node and Rust, so one separator works everywhere and
+  keeps joined paths comparable in assertions.
+
+**The rule:** nothing under `src/core/` may import `node:*`, `child_process`,
+`@tauri-apps/*`, or any process/filesystem API. Enforced by review and by
+`vite build` — a `node:` import in core fails the build loudly.
+
+## Module map
+
+Core is headless and host-agnostic. UI is a renderer over a pure reducer.
+
+```
+src/core/                     no IO, no DOM — everything injected
+  types.ts                    the domain. Draft, RefinedDraft, ImageAttachment,
+                              ProviderCapabilities, Settings, ProviderError.
+                              Every shared type comes from here.
+  runner.ts   files.ts        the two seams (interfaces only)
+  testing/
+    fake-runner.ts            scripted ProcessRunner for tests
+    node-files.ts             REAL FileStore on node:fs — tests only, never bundled
+  llm/          69 tests      claude.ts / codex.ts adapters: argv, stdin, stream
+                              parsing, error taxonomy. Hands back the RAW model
+                              object; does not interpret it.
+  refine/      102 tests      prompt.ts / schema.ts / parse.ts: what we ask for and
+                              how the answer becomes a RefinedDraft.
+  discovery/    45 tests      which models/efforts each CLI offers, live-enumerated,
+                              cached 24h per provider. No hardcoded model list.
+                              Only a probe's 404 may hide a model — a probe that
+                              merely BROKE degrades to the CLI default, uncached.
+  github/       28 tests      every `gh` call. Orphan assets branch, upload-before-
+                              create, SHA-pinned image rewrite. renderSection is the
+                              one place section markdown is produced, so the
+                              no-fabrication rule is enforced where it cannot be
+                              bypassed: an emptied section is dropped, not headed.
+  drafts/       21 tests      auto-save from the first keystroke; nothing is lost
+                              except by discard or a confirmed submit. `inFlightId`
+                              is the store's OWN bracket, not a flag callers pass:
+                              the single writer derives `inFlight` from it, so no
+                              writer can forget to consult it.
+  ui/           89 tests      reducer.ts (pure stage machine; effects come back as
+                              data) + onboarding.ts. `MachineState` (gh + providers)
+                              is split from `DetectedState` on purpose: it is exactly
+                              the part no palette control can change, so the cards
+                              derive from re-detected machine state and settings live
+                              in one place. Storing the whole snapshot is what made
+                              first run inescapable.
+  files.test.ts  6 tests      joinPath
+
+src/app/                      Tauri-aware host layer (with src/ui/main.tsx)
+  runner.ts     22 tests      ProcessRunner over our own quacket_run / quacket_spawn
+  files.ts                    FileStore on tauri-plugin-fs
+  services.ts                 composition root: resolves real dirs, wires core
+
+src/ui/                       React. Renders the reducer, performs its effects.
+  main.tsx                    entry: builds Platform, composes both service layers.
+                              The one .tsx that imports Tauri directly — it IS the
+                              platform edge; App.tsx and below stay host-agnostic.
+  App.tsx       66 tests      reducer host + effect performer + keyboard owner
+  components/  184 tests      services.ts (UI-facing port over src/app) + keymap /
+                              fuzzy / format / session / host / notify / settings —
+                              every real decision lives in a pure .ts module.
+                              Picker.tsx is the ONLY file that writes a `<select>`;
+                              raw-select.guard.test.ts fails the build if a second
+                              one appears in any .tsx under src/ (AST, not grep).
+                              services.test.ts drives the REAL createUiServices —
+                              built nowhere but main.tsx, so it had no test at all.
+  annotate/     41 tests      model.ts (pure ops/geometry/keymap) + AnnotateEditor.tsx
+
+src-tauri/    27 tests        thin glue: tray, global hotkey, autostart, window, the
+                              spawn command, and the drag-drop fs grant. No business
+                              logic. 1454 lines, of which proc.rs (714) is spawn/IO/
+                              kill/allowlist, dnd.rs (284) is the drop grant, and
+                              capabilities.rs (239) is ACL tests only.
+```
+
+**Why `dnd.rs` is legal glue and not logic.** It decides nothing about a report; it
+answers "may the webview read this path", which is a question only Rust can answer
+because plugin-fs's scope object lives there. A drop is consent to read exactly the
+file dropped, so the grant is made at the moment of the drop rather than pre-declared
+as a glob — see [Known blockers](#known-blockers).
+
+**Why `src/app/services.ts` and `src/ui/components/services.ts` both exist.** They
+are layered, not duplicated. `src/app` answers "what are the core modules, wired to
+the real machine"; `src/ui/components` answers "what does the palette need" and
+composes the pipelines that span core modules (refine = prompt + adapter + parse;
+submit = store + github). `main.tsx` builds the first and passes it into the second.
+
+## Testing
+
+**Decisions live in `.ts`; `.tsx` tests prove the wiring performs them.** The first
+half of that rule is unchanged and still load-bearing: keyboard mapping, fuzzy
+ranking, restore, error mapping, annotation geometry are pure `.ts` modules with
+tests. **If it is worth deciding, it does not get decided in a `.tsx`.**
+
+What changed: `.tsx` is now collected (`include: ['src/**/*.test.{ts,tsx}']`).
+`environment: 'node'` is still the default so the headless core pays nothing; a file
+that needs a DOM opts in with a `// @vitest-environment jsdom` docblock. The old rule
+read "no component tests, by design", but in practice it had become "the `.tsx` cannot
+be tested, so whatever is left in it is unverifiable" — and the v1 lifecycle blockers
+(auto-save racing the submit bracket, batched dispatches rendering over each other's
+effects) all lived in exactly that blind spot. What a reducer *decides* and what the
+wiring *performs* are two different claims; only a rendered component can prove the
+second.
+
+Tests drive real behaviour: real temp dirs through `nodeFiles`, scripted argv through
+`FakeRunner`. `src/app/runner.test.ts` fakes at the true boundary —
+`window.__TAURI_INTERNALS__`, the object Rust injects — so assertions land on exactly
+what would cross to Rust.
+
+**A port's fake proves its callers, never its implementation — so the implementation
+needs its own test.** `UiServices` is the palette's whole outside world, and faking
+it is what makes `App.test.tsx` possible. But `createUiServices` — the real thing
+behind that port — is constructed **only** in `main.tsx`, which no test loads. So for
+five rounds the entire file was executed by nothing, and the one line carrying the
+user's model and effort into the adapter could be deleted with the whole suite green
+(blocker #8). This is the same shape as the round-4 lesson one level up: there, the
+fake could not refuse what the OS refuses; here, the fake stands *in front of* the
+code under test, so the code under test never runs. `components/services.test.ts`
+therefore builds the real composition and fakes only the process — the repo's one
+seam, and the only thing that should ever be faked. **If a module is only built at the
+entry point, assume it is untested until you have watched a mutation of it go red.**
+
+**A fake cannot refuse what the OS refuses — and that is where the seam ends.** The
+one seam is what makes this codebase testable, and round 4 found its price. `FakeRunner`
+accepts any argv, so `codex.ts` handing the prompt as a multi-line argument passed
+every test for three rounds while **100% of real Codex refines failed to spawn** —
+Windows will not start a `.cmd` shim with a newline in argv. Two tests had gone
+further and *asserted* the broken argv, pinning the bug in place as if it were the
+contract.
+
+The lesson is not "trust the seam less"; it is that a scripted fake proves *we sent
+what we meant to send*, never *the OS would accept it*. Claims of that second kind
+(argv the OS must swallow, stdin EOF, a killed grandchild, a scope check) are settled
+by `cargo test` against real processes, or by live verification, or they are not
+settled. Where a test now encodes an OS rule rather than an observation, it says so —
+see `codex.test.ts`'s *"never puts a newline in argv"*.
+
+**Two jsdom gaps are stubbed, and only these two:** `URL.createObjectURL`, and (in the
+annotation tests) `<img>` load + canvas `getContext`/`toBlob`. jsdom ships neither, so
+the editor could not be rendered at all — which is precisely why `annotate-done` got
+to be a second, unnoticed producer of blocker #5. These supply browser APIs that are
+missing; they never stand in for the code under test, and the store underneath is
+real.
+
+**The Rust tests are not a formality.** `cargo test` is where stdin-EOF-delivery and
+timeout-kill are proven, because they are unprovable in TypeScript: they spawn real
+`node` children. The stdin tests echo only on the `end` event, so a child that exits
+at all *is* the proof EOF arrived; the kill tests read the child's self-reported pid
+from a file and ask **`tasklist`**, never the return value of the thing under test.
+
+## Running it
+
+```bash
+npm install
+
+npx tsc --noEmit                  # typecheck        → 0 errors
+npx vitest run                    # tests            → 677 passed, 26 files
+npx vite build                    # frontend bundle  → succeeds
+cd src-tauri && cargo check       # Rust             → succeeds
+cd src-tauri && cargo test        # Rust             → 27 passed
+
+npm run tauri dev                 # run the app
+```
+
+`npx vite build` is a real gate, not a formality: it is what catches a `node:` import
+sneaking into core. `cargo test` is the only gate that proves stdin EOF and
+timeout-kill against a real process — do not treat it as optional.
+
+Requires `claude` and/or `codex`, plus `gh`, installed and authenticated. Quacket
+enumerates models from whichever CLIs are present rather than shipping a list.
+
+## Known blockers
+
+**FIXED — `ProcSpec.stdin` could not be delivered.** tauri-plugin-shell has no
+`stdin_close` IPC command, so a child could be written to but never sent EOF, and
+`execute()` returned no pid to kill on a timeout. Both CLIs need EOF to answer at
+all, so this produced *silently wrong results*, not degradation. The plugin is now
+**gone from the tree** (Rust crate, JS dependency, and `shell:*` permissions all
+removed — `capabilities.rs` has a test that fails if any `shell:` permission ever
+returns). `src-tauri/src/proc.rs` owns spawn/IO/kill and re-implements the allowlist
+as `proc::ALLOWED` = exactly `claude`, `codex`, `gh`. On Windows the child is put in
+a job object with `KILL_ON_JOB_CLOSE`, because codex ships as an npm `.cmd` shim:
+killing the child would only kill `cmd.exe` and orphan the real CLI. Proven by
+`cargo test` against real processes, including the grandchild-behind-a-shim case.
+
+**FIXED — the ACL denied 8 of 9 fs commands.** plugin-fs permissions are strictly
+per-command; `default.json` granted only `fs:allow-read-file`. All nine are granted
+now, declared once against the global `fs:scope`.
+
+**FIXED — a dropped screenshot outside `$HOME` could not be read (story 5).** The
+previous entry in this section used to end "…`fs:allow-read-file` alone keeps the
+wider `$HOME/**`, because a dragged screenshot is an arbitrary path the user picked."
+That was wrong twice over, and it is worth keeping the correction visible because the
+sentence *sounded* like a considered trade-off. `$HOME/**` was simultaneously **too
+wide** — a blanket read over every file the user owns — and **too narrow**: it never
+covered `D:\shots\bug.png`, a network share, or a USB stick, so plugin-fs denied
+`readFile` and the drag path was dead off the home tree. One static glob cannot
+express runtime consent, so it failed at both ends.
+
+The file picker was immune, which is why this survived: plugin-dialog grants the
+picked path at runtime inside its own command (`s.allow_file(&path)` on
+`window.try_fs_scope()`) before handing the path back. Picker and drop share one
+`readFile`; only the picker had earned its access. `src-tauri/src/dnd.rs` now mirrors
+that call for drops — a drop *is* the consent, so it earns exactly the file it names,
+at the moment it names it, and only for the image extensions the frontend will
+actually read. The static scope is consequently pinned to the four paths Quacket owns
+(`$APPDATA`, `$TEMP/quacket`, + `/**`), and **no fs permission carries a scope of its
+own**. Verified against the generated ACL (`gen/schemas/capabilities.json`), not just
+the source.
+
+Two traps worth knowing, both now pinned by tests:
+
+- Tauri core *does* call `scopes.allow_file` on drop, but `crate::Scopes::allow_file`
+  only touches the **asset-protocol** scope, never plugin-fs's. Reading that line and
+  assuming the drop was covered is how the gap survives a skim.
+- The grant fires on **Enter as well as Drop**. Tauri runs its own handler — the one
+  that emits `tauri://drag-drop` to the webview — *before* `Builder::on_window_event`
+  listeners, so a Drop-only grant races the frontend's `readFile`. It wins by orders
+  of magnitude, but "wins in practice" is how a wire ends up crossed.
+
+### What is still NOT settled
+
+> **Read this first if you are picking Quacket up.** v1 development stopped after
+> round 5. The five gates below are green and the numbers in this file were all
+> measured, but **green gates are not a running app** — the single most important
+> fact about this codebase is that *nobody has ever run it*. The ledger in #1 is
+> the honest boundary between what is proven and what is merely untested. Nothing
+> in it has been dropped to make the list shorter.
+
+**1. PARTLY SETTLED — the CLIs have now been driven live; the app itself never has.**
+Round 4 ran the real adapters against live `claude` 2.1.211, `codex-cli` 0.144.4 and
+`gh` 2.90.0 on this machine (`docs/research/live-verification-round4.md`), which is
+what found the Codex spawn blocker. What that covers and what it does not:
+
+- **Covered — driven against the real thing:** both providers' golden paths
+  end-to-end (prompt + image + schema → the real `parseRefined()`, unmassaged),
+  the no-fabrication rule against live models, `codex exec resume`, `AGENTS.md`
+  via `-C`, and every `gh` **read** argv. Separately, `cargo test` proves spawn,
+  stdin EOF and timeout-kill against real child processes.
+- **NEVER EXERCISED — no evidence of any kind exists:**
+  - **The assembled Tauri app has never been launched.** `npm run tauri dev` has
+    not been run in any round. Nothing has driven the tray, the global hotkey, the
+    window show/hide, the updater, or plugin-fs's runtime scope check.
+  - **Nothing has ever been written to a real GitHub repo.** No issue, no comment,
+    no `quacket-assets` branch, no image blob. `gh` was exercised **read-only by
+    instruction** in every round. The entire submit *write* leg — upload → create,
+    the orphan branch, SHA-pinned URLs, label application, the comment-vs-issue
+    switch — is test-verified only, against `FakeRunner`.
+  - Consequence worth stating plainly: **the first person to run this will be the
+    first person to find out.** Round 4 is the precedent — the first contact with a
+    real CLI found a blocker that had passed every test for three rounds, because
+    a fake cannot refuse what the OS refuses. The write leg has not had its
+    round 4 yet.
+
+The manual smoke checklist in the spec remains the only thing that can close the
+second half, and it should be run against a **throwaway repo**, not a real one.
+
+**2. The ACL is proven by construction, not at runtime.** The tests verify that every
+plugin-fs API the frontend imports is granted, and cross-check the permission→command
+mapping against **plugin-fs's own `acl-manifests.json`** rather than a remembered
+list. They do **not** execute plugin-fs's runtime scope check — that needs the real
+app. The glob shapes are tauri's own `fs:scope-appdata-recursive` shapes verbatim.
+
+The drop grant in `dnd.rs` inherits the same limit, and stops one step short of it.
+Its `FileGrant` seam proves the *decision* — which dropped paths earn a grant, and
+that neighbours, non-images, and directories do not. What stays unproven is only that
+`Scope::allow_file` makes a subsequent `readFile` pass. That is not a guess: it is the
+identical call on the identical object plugin-dialog makes for the file picker, which
+works in this app today. It is unasserted for a mechanical reason, not a design one —
+building a real `tauri::fs::Scope` needs `tauri::test::mock_app()`, whose `test`
+feature makes muda's comctl32-v6 imports live in the test binary, which then fails to
+load (STATUS_ENTRYPOINT_NOT_FOUND: test exes get no v6 activation manifest) and takes
+**all 27 Rust tests** down with it. Trading the suite for one assertion was the wrong
+price.
+
+**2b. The drop grant and the frontend read agree by a pinned test, not a shared
+symbol** — they are in different languages. `dnd.rs` mirrors `IMAGE_EXTENSIONS` from
+`src/ui/main.tsx` and `the_granted_extensions_are_the_ones_the_frontend_reads` parses
+that very line to keep the pair honest, so a format added on one side goes red instead
+of failing in the shipped app. This is only load-bearing because `main.tsx` now has
+**one** list: the constant used to feed just the file dialog while an independent
+`/\.(png|jpe?g)$/i` gated the reads, so the test guarded the constant that was not the
+gate — widening the regex alone kept all 27 Rust tests green while the frontend read a
+format Rust had never granted. `isImage` derives from the list; there is one gate.
+
+**3. SETTLED — both inferred adapter behaviours were verified live in round 4.** This
+entry used to name them as guesses. They are not guesses any more, and neither
+degraded silently, so the entry is kept only to record the answers:
+
+- **Claude's `api_retry` shape: CONFIRMED.** `error` is a bare enum string, so
+  `claude.ts`'s first branch reads it correctly. A real-shape fixture now pins it.
+  One thing came with it: the enum has **ten** members and both this file's source
+  (`headless-cli-invocation-contract.md`) and `errors.ts` listed **nine** —
+  `oauth_org_not_allowed` was missing and fell through to the status/text
+  heuristics. Both are fixed, and a test now walks the whole enum so an eleventh
+  member cannot go unmapped quietly.
+- **`codex exec resume` accepts `--skip-git-repo-check` and `--output-schema`:
+  CONFIRMED.** `followUp` is not broken; a live resume returned schema-conforming
+  output in 11–13 s.
+
+What replaced them is real and is **4** and **6** below.
+
+**4. An all-sections-dropped report files an issue with a title and no body.**
+`renderSection` correctly refuses to emit `## Actual` over nothing, so a report whose
+every section was stripped (e.g. filing without images when images were the only
+content) yields an empty body. This is honest, and the user saw and approved the
+draft — but if a floor is wanted, it belongs in the reducer disabling
+file-without-images when it would empty the report, not in the renderer.
+
+**5. FIXED — an image could reach the screen without reaching the disk, on every
+route, and the draft it left behind could not be reopened.** Worth keeping in full,
+because the shape of it is the point and it had **two independent producers** that
+were found a round apart.
+
+The rule now: **bytes first, state second.** Nothing may put an image into `UiState`
+that is not already on disk. That is not a tidy-up, it is the whole fix — the
+auto-save builds `draft.json` FROM STATE, while `attachImage` is the only thing that
+ever writes the bytes, so any moment where state leads the disk is a manifest entry
+with no file. `DraftStore.imageBytes` calls exactly that corruption and throws
+(`draft image img_1 is missing from disk`), deliberately and correctly. The draft did
+not restore missing one screenshot; it did not restore at all.
+
+| producer | what it did | found |
+| --- | --- | --- |
+| intake (paste / drag-drop / pick) | dispatched `add-image` *before* `await attachImage`, and all three callers dropped the rejection (`void`ed, or a `try` scoped to the read) | round 3, fixed round 4 |
+| `annotate-done` | rewrote `bytes` **and** `mediaType: 'image/png'` in state with **nothing writing the new bytes at all** | round 4, fixed round 4 |
+
+The annotation half was the nastier of the two and needed no failure to fire.
+`DraftStore.fileFor` derives the filename from `mediaType`, so annotating a **JPEG**
+renamed it in the manifest (`img_1.png`) over a file still called `img_1.jpg` — a
+**100% deterministic** brick, not a race. Annotating a PNG lost the marks instead:
+same filename, stale bytes, restored silently without the drawing.
+
+Both now funnel through the store's own re-attach path, which was designed for this
+all along (`store.ts`: *"Re-attaching the same id overwrites the file, which is how
+annotation (destructive in v1) lands."*) — the call was simply never made. `flattenedImage` is exported
+from `reducer.ts` and used by both the reducer and `App.tsx`, so "annotated ⇒ PNG +
+`annotated: true`" has one definition; restating it in the `.tsx` is what would let
+the two drift and rename a file out from under the manifest again.
+
+A failure on either route now says so in the WarningSlot and keeps the bytes, so
+**Try again** is a button that can actually work. On the annotate route nothing is
+dispatched on failure, so the editor stays open with the marks still on the canvas
+and the draft still describing the image genuinely on disk.
+
+Pinned by tests that drive the real component against a **real `DraftStore` on a real
+temp dir** — `store.load()` must return the text and not throw. Re-coupling either
+producer turns them red with the exact production error. The round-3 note that *"`vi.fn(async () => {})` is the
+only `attachImage` any test uses; none rejects it"* is no longer true, and that was
+the thing that let this live for three rounds.
+
+**5b. The orphan file after a JPEG is annotated is known and benign.** Re-attaching
+writes `img_1.png` and the manifest stops naming `img_1.jpg`, which stays on disk
+until the draft folder is removed by discard, a confirmed submit, or `pruneOthers`.
+`load()` reads only what the manifest names, so it is litter inside an ephemeral
+folder, not a defect — recorded so nobody re-derives it as one.
+
+**6. UNSETTLED — the 120 s adapter timeout has less headroom than the docs imply.**
+`DEFAULT_TIMEOUT_MS` is 120 s and the research reports quote Claude refines at
+2.3–6.3 s. Round 4 measured a live Claude golden path at **90.7 s** — same shape of
+call, ~1.3× off the timeout rather than ~19×. One machine, one day, and variance was
+not excluded, so this is a **concern, not a verdict**: it may be network, load, or a
+slower model than the one originally measured. It wants a second measurement across
+days/models and then an owner's decision, not a silent widening of the constant —
+which is why the constant was left alone.
+
+**7. `--ignore-user-config` does not suppress `~/.codex/skills/`.** The flag is in
+(spec-mandated, and it stops the user's `config.toml` steering refines), but a skills
+directory still loaded with the flag present. Measured, not theorised — the error
+item persisted with and without. Impact is unquantified. **UNSETTLED.**
+
+**8. FIXED — the user's model and effort reached the CLI through one line that no
+test executed.** Found at round 5 integration, and worth keeping because it is the
+repo's signature failure in a new place.
+
+Round 5 fixed "the first-run card discards its own effort pick" *in the card*, and
+the adapters had always pinned `effort → argv` (`codex.test.ts`, `claude.test.ts`).
+Both halves green. The line joining them —
+
+```ts
+// src/ui/components/services.ts, inside refine()
+model: settings.model,
+effort: settings.effort,
+```
+
+— belonged to neither. `createUiServices` is constructed **only in `main.tsx`**;
+`App.test.tsx` imports its *type* and hands the component a fake. So nothing ran
+it. Replacing `effort: settings.effort` with `effort: null` disables reasoning
+effort **app-wide, on every refine, for both providers** — and left the entire suite
+as it stood at that moment (669 tests, before the four below existed) and
+`tsc --noEmit` green. That was executed, not argued.
+
+Now pinned by `components/services.test.ts`, which drives the **real**
+`createUiServices` with the **real** adapter and **real** `createGitHub` over
+`FakeRunner`, so the assertion lands where the spec puts it — the argv handed to
+`codex`/`claude`. Both mutations (`effort: null`, `model: null`) redden exactly
+their own claim and nothing else.
+
+**The general lesson, since it will recur:** a composition root that is only ever
+built by the app's entry point is invisible to a suite that fakes it. Two green
+halves do not make a green whole; the *joint* is a claim and needs its own test.
+`UiServices` is a port, and every port has this shape — the fake proves the caller,
+never the implementation.
+
+**Sibling residual, named rather than fixed: the Palette FOOTER pickers (story 37)
+have no behavioural test.** `Pickers` in `Palette.tsx` is the app's *second* surface
+for choosing model/effort, and its commit logic was checked by reading, not by
+running: effort commits verbatim (`{...settings, effort}`), a model switch keeps an
+effort the new model still takes, a provider switch resets it — which matches
+`SettingsView.tsx` and the first-run card. It is left untested deliberately and the
+risk is genuinely lower than #8 was: it is three lines of composition over pure
+functions that ARE tested (`reconcileEffort`, `effortsFor`) and a primitive that IS
+tested (`Picker`), and the guard makes a dead row unexpressible. But "correct by
+inspection" is exactly what #8 was too, right up until the mutation was run. If you
+touch that footer, test it first.
+
+**9. OPEN, UNREPRODUCED — a suspected timing flake in `App.test.tsx`.** Recorded
+because it was seen, not because it is understood; it is the one thing in this file
+that is a report rather than a measurement.
+
+During round 5 a fix agent saw **5 failures** in *"a screenshot the page never
+manages to read"* on a cold-transform run, all dying at **~1020 ms against a
+1000 ms budget** — testing-library's default `waitFor` timeout, which nothing in
+this repo overrides. It has not reproduced since: **4 consecutive full runs at
+integration, including one with the vite cache deleted, were 673/673 green**, and
+the block passes alone.
+
+The honest reading is that it was probably an artefact of the round-5 setup —
+another agent was rewriting files *while* vitest transformed them, on a loaded
+machine — but that is a hypothesis, not a finding, and "it went away" is not a
+diagnosis. What is real either way: those assertions sit ~2 % under a default
+budget on a cold run, so a slower machine (CI, a fresh clone) can cross it. If it
+fires, the fix is an explicit timeout on those `waitFor`s — **not** a retry, and
+**not** deleting the assertions, which pin genuine unhandled-rejection behaviour.
+
+The listener in that block is `process.on('unhandledRejection')`, which is
+process-global and therefore shared with every other file in the same vitest
+worker. It is installed and removed per test (2 installs, 2 `stop()`s, in
+`finally`), so it is balanced today — but it is a global, and a future test that
+leaks one will produce confusing cross-file failures.
+
+**10. FIXED — `detect()` could brick boot on its own, via `autostart`.** Round 3 made
+draft loading resilient by giving it its own boot slot, reasoning that *only detection
+may stand between the user and the capture box*. That left `detect()` carrying the
+whole boot: `App.tsx` awaits it with no catch **by design**, so a rejection there was
+a palette stuck on "Checking your setup…" forever — no capture box, no error card, not
+even Discard. The exact brick round 3 had called a blocker for `loadDraft`.
+
+Two of `detect()`'s three inputs already degraded to a known state (`ghState` to
+not-installed, `capabilitiesOf` to absent). `core.autostart.isEnabled()` did not, so
+one unreadable registry key could take the app down. That is this repo's single
+most-repeated defect shape, for the fourth time: **one producer not knowing an
+invariant its siblings keep** (round 2: `renderBody` vs the parser; round 4:
+`annotate-done` vs the manifest; round 5: attach vs `shouldSaveDraft`).
+
+Fixed at the source, not with a catch on the boot effect — a catch there would let a
+future contract break slide silently, which is the opposite of what is wanted.
+`autostartState()` degrades to `false` (the honest answer to "is it on?" when the Run
+key cannot be read; the toggle still works, since enabling an already-enabled
+autostart is a no-op), and `detect()`'s never-rejects contract is now stated where it
+is implemented. `services.test.ts`'s *"detect never rejects"* block rejects **every**
+input in turn — not just the one that was broken — so the next input added to
+`detect()` has to degrade too. Mutation-verified: restoring the bare
+`core.autostart.isEnabled()` reddens exactly 2 of the 8 tests and leaves the other 6
+green, so each pins its own claim.
+
+## What live verification settled
+
+Round 4 drove the real adapters against live CLIs on this machine — `claude`
+**2.1.211**, `codex-cli` **0.144.4**, `gh` **2.90.0**, `rustc` 1.95.0. Full transcript
+and method: `docs/research/live-verification-round4.md`. `gh` was read-only; nothing
+was written to any repo.
+
+| Claim the code made | Verdict |
+| --- | --- |
+| Codex prompt delivery on Windows | **MISMATCH — BLOCKER.** 100% of refines failed to spawn. Fixed (stdin) |
+| `--ignore-user-config` present (spec pins it) | **MISMATCH.** Absent; user config steered every refine. Fixed |
+| Claude `api_retry` event shape | **CONFIRMED** — bare enum string, read correctly |
+| `api_retry` category list complete | **MISMATCH** — 9 of 10; `oauth_org_not_allowed` unmapped. Fixed |
+| `codex exec resume` accepts `--skip-git-repo-check` / `--output-schema` | **CONFIRMED** — `followUp` is not broken |
+| Both providers' golden paths → `parseRefined()` | **CONFIRMED** — unmassaged, both |
+| No-fabrication rule against live models | **CONFIRMED** — 3 runs, both providers; `Environment` omitted, never padded |
+| `AGENTS.md` via `-C` is read | **CONFIRMED** — Codex's only system-prompt route works |
+| `gh` read argv, `viewerPermission`, label objects | **CONFIRMED** |
+| `github.ts` "empty listing prints empty stdout" | **MISMATCH** — prints `[]\n`. No defect (the code is defensive); the *comment* claimed "verified" and was not. Comment corrected |
+| Claude refine latency vs. the 120 s timeout | **UNSETTLED** — 90.7 s measured vs. 6.3 s documented. See blocker #6 |
+
+**The blocker is the argument for doing this at all.** `codex.ts` passed the prompt as
+argv; npm ships `codex` as a `.cmd` batch shim, and Rust's `Command` refuses to spawn a
+batch file with any newline-containing argument (CVE-2024-24576 hardening).
+`buildUserPrompt()` is multi-line by construction, so **every** Codex refine and every
+follow-up died — and two existing tests had *enshrined* it, asserting `args.at(-1)` was
+the prompt, with `FakeRunner` stubbing away the OS failure that a real spawn would hit.
+A fake cannot refuse what the OS refuses. Those tests were rewritten, not deleted.
+
+**Carry this forward.** The verifying agent's first harness routed `codex.cmd` through
+`cmd.exe`, which silently truncates multi-line args at the first newline and **exits
+0** — it produced a plausible-but-wrong draft and a follow-up that "succeeded" while
+the model never saw the answer. That harness lie is the same shape as the fixture lies
+it was sent to find, and it nearly became a conclusion. A harness that cannot
+reproduce the real failure is not evidence.
+
+## Conventions
+
+- **The user is not an engineer.** A control must carry its own meaning; a sentence
+  teaching someone how to operate it is evidence the control failed. Icons are inline
+  SVG with `stroke="currentColor"` — never emoji, never typographic glyphs.
+- **No fabrication.** The refiner may not invent an issue number, a section, or a
+  detail the user did not give. `dropInventedIssues` enforces this against the
+  candidates actually shown.
+- **Nothing is lost.** Crash, kill, close, and every failed submit keep the draft.
+  Only an explicit discard or a confirmed submit success frees the slot.
+- Shared types come from `src/core/types.ts`. If two modules need a shape, it lives
+  there — not copied.

@@ -1,0 +1,51 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Everything the capture window is allowed to do. Nothing is permitted by default in Tauri v2 — if it is not listed here, the frontend cannot call it. Two things here are easy to get wrong, so both are pinned by tests in src-tauri/src/capabilities.rs. (1) plugin-fs permissions are strictly PER-COMMAND: fs:allow-read-file buys read_file and nothing else, so every command src/app/files.ts calls needs its own entry. (2) fs:scope grants no command at all — it only widens the global scope those entries are checked against, which is how the app-data and scratch dirs get declared once instead of nine times. NO entry here carries a scope of its own: the static scope is exactly $APPDATA and Quacket's own $TEMP/quacket, for reads and writes alike. The two paths that legitimately point outside it are both earned at RUNTIME, per file, rather than pre-granted as a glob — plugin-dialog allows a picked path inside its own command, and src-tauri/src/dnd.rs allows a dropped image the moment it is dropped. That is why fs:allow-read-file needs no wide scope; it used to claim $HOME/** 'for the arbitrary path the user picked', which was both a blanket grant over everything the user owns AND still too narrow to open a screenshot on a second drive. There is no shell permission: Quacket spawns through its own quacket_run / quacket_spawn commands, whose allowlist lives in src-tauri/src/proc.rs.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-is-visible",
+    "core:window:allow-start-dragging",
+    "core:webview:allow-internal-toggle-devtools",
+
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-unregister",
+
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA" },
+        { "path": "$APPDATA/**" },
+        { "path": "$TEMP/quacket" },
+        { "path": "$TEMP/quacket/**" }
+      ]
+    },
+    "fs:allow-read-file",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-read-dir",
+    "fs:allow-read-text-file",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-write-file",
+    "fs:allow-write-text-file",
+    "fs:deny-webview-data-windows",
+    "fs:deny-webview-data-linux",
+
+    "store:default",
+    "autostart:default",
+    "notification:default",
+    "updater:default",
+    "process:default",
+    "dialog:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://github.com/*" }]
+    }
+  ]
+}

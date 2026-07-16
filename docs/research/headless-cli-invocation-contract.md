@@ -85,7 +85,29 @@ The **last line** of stdout is the `result` event — same schema as `--output-f
 | Invalid/unavailable model | 1 | `is_error: true`, `api_error_status: 404`, `terminal_reason: "api_error"`, human message in `result` |
 | Not logged in | 1 | `is_error: true`, `result: "Not logged in · Please run /login"`, `terminal_reason: "api_error"` |
 
-**Gotcha:** `subtype` stays `"success"` even on errors — branch on `is_error` / exit code, not `subtype`. In stream-json mode, retryable failures emit `system/api_retry` events with an `error` category: `authentication_failed`, `billing_error`, `rate_limit`, `overloaded`, `invalid_request`, `model_not_found`, `server_error`, `max_output_tokens`, `unknown` — a ready-made taxonomy for adapter error mapping.
+**Gotcha:** `subtype` stays `"success"` even on errors — branch on `is_error` / exit code, not `subtype`. In stream-json mode, retryable failures emit `system/api_retry` events with an `error` category — a ready-made taxonomy for adapter error mapping.
+
+**Corrected in round 4 (`live-verification-round4.md`), and worth keeping visible.** This
+list previously carried **nine** categories, assembled by hand from observed output. The real
+enum has **ten**: it was read out of `claude.exe`'s own embedded Zod schema against live
+2.1.211, and `oauth_org_not_allowed` was never in the list here. `errors.ts` was built from
+this table, so it inherited the gap exactly — the missing category fell through to the
+status/text heuristics, i.e. silently degraded to guessing on the one signal that never has
+to guess. A hand-assembled list of an enum is the same fixture-lie as a hand-assembled
+transcript; the schema is the ground truth, not what was seen.
+
+The enum, in the binary's own order:
+
+```
+authentication_failed  oauth_org_not_allowed  billing_error  rate_limit  overloaded
+invalid_request        model_not_found        server_error   unknown     max_output_tokens
+```
+
+`error` is a **bare enum string**, not an object with `.category`. Note also `error_status`
+on the `api_retry` event vs. `api_error_status` on the result event, and that a
+non-retryable error emits **no `api_retry` at all** (a bad model gives an `assistant` event
+with `"error":"model_not_found"` + `api_error_status: 404`), so the status fallback still
+carries real weight.
 
 ### Image input: YES (two routes)
 
