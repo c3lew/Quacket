@@ -342,16 +342,20 @@ describe('a first run, start to finish', () => {
     expect(screen.getByText('Your summon shortcut')).toBeVisible();
   });
 
-  it('carries the level over into the footer that reports it from then on', async () => {
-    // The footer pickers are the app's standing answer to "what will refine my
-    // report?". It must agree with the card that set it — one source of truth.
+  it('carries the level over into Settings, the surface that reports it from then on', async () => {
+    // Settings is the app's standing answer to "what will refine my report?"
+    // (the footer copy was retired in #18). It must agree with the card that
+    // set it — one source of truth.
     await boot(fakeServices());
 
     fireEvent.change(picker('Thinking effort'), { target: { value: 'max' } });
     await click(/Use Claude Code/);
     await screen.findByPlaceholderText(CAPTURE_BOX);
 
-    expect(shows(picker('Thinking'))).toBe('max');
+    fireEvent.click(screen.getByLabelText('Settings'));
+    await screen.findByLabelText('Assistant');
+
+    expect(shows(picker('Thinking effort'))).toBe('max');
     expect(shows(picker('Model'))).toBe('Sonnet 5');
   });
 });

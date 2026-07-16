@@ -1,15 +1,16 @@
 /**
- * The palette shell: the chrome every view sits inside, plus the two controls
- * that live in it permanently — the repo pill and the model/effort pickers.
+ * The palette shell: the chrome every view sits inside, plus the one control
+ * that lives in it permanently — the repo pill. The AI / model / thinking
+ * choice lives in Settings, its single surface: a footer copy was tried and
+ * retired (#18) — five controls plus shortcut hints could not share one
+ * 620px row without squeezing some control's value into an unreadable stub.
  */
 
 import type { ReactNode } from 'react';
 
-import type { ModelInfo, ProviderCapabilities, ProviderId, Repo, Settings } from '../../core/types.ts';
-import { effortsFor, modelLabel, providerLabel, reconcileEffort } from './format.ts';
+import type { Repo } from '../../core/types.ts';
 import { Icon, Wordmark } from './icons.tsx';
 import type { View } from './keymap.ts';
-import { Picker } from './Picker.tsx';
 
 // ── Shell ───────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,13 @@ export interface HeaderProps {
 /**
  * The repo pill is the only place the target is stated, so it is stated at rest
  * on every stage: nobody should have to remember where their issue is going.
+ *
+ * The window is undecorated, so this header is also its title bar: every blank
+ * surface carries `data-tauri-drag-region` (#19). Tauri's injected handler
+ * starts the drag on mousedown over the EXACT element with the attribute —
+ * children are exempt, which is what keeps the buttons clickable, and also why
+ * the spacer (the flex:1 empty middle) and the view title need the attribute
+ * themselves rather than inheriting the header's.
  */
 export function Header({
   view,
@@ -45,7 +53,7 @@ export function Header({
   onBack,
 }: HeaderProps) {
   return (
-    <header className="panel-head">
+    <header className="panel-head" data-tauri-drag-region>
       <Wordmark />
 
       {view === 'capture' ? (
@@ -57,7 +65,7 @@ export function Header({
             <kbd>Ctrl+R</kbd>
           </button>
 
-          <span className="spacer" />
+          <span className="spacer" data-tauri-drag-region />
 
           <button className="btn ghost" onClick={onOpenIssues}>
             <Icon name="list" size={14} />
@@ -69,8 +77,10 @@ export function Header({
         </>
       ) : (
         <>
-          <span className="view-title">{view === 'issues' ? 'Open issues' : 'Settings'}</span>
-          <span className="spacer" />
+          <span className="view-title" data-tauri-drag-region>
+            {view === 'issues' ? 'Open issues' : 'Settings'}
+          </span>
+          <span className="spacer" data-tauri-drag-region />
           <button className="btn ghost" onClick={onBack}>
             <Icon name="back" size={13} />
             Back
@@ -147,87 +157,5 @@ export function CommandLine({ command, onCopy }: { command: string; onCopy: (tex
         Copy
       </button>
     </div>
-  );
-}
-
-// ── Model / effort pickers ──────────────────────────────────────────────────
-
-export interface PickersProps {
-  settings: Settings;
-  providers: ProviderCapabilities[];
-  onChange: (settings: Settings) => void;
-  disabled?: boolean;
-}
-
-/**
- * Fed entirely by live enumeration — never a hardcoded list. Effort is per
- * MODEL, not per provider, so the effort picker disappears for a model that
- * takes none rather than offering a flag the CLI would reject.
- *
- * These sit in the footer of every capture, which makes them the app's standing
- * answer to "what will refine my report?". They go through `Picker` for the same
- * reason the Settings rows and the first-run card do: a `<select>` whose value
- * matches no option shows `option[0]` and reads it back, so a stale or unset
- * choice would have this footer quietly naming a model the CLI is not being
- * given. `Picker.tsx` owns that rule; there is nowhere else to write one.
- */
-export function Pickers({ settings, providers, onChange, disabled = false }: PickersProps) {
-  const current = providers.find((p) => p.provider === settings.provider);
-  const models: ModelInfo[] = current?.models ?? [];
-  const efforts = effortsFor(models, settings.model);
-
-  const pickProvider = (provider: ProviderId) => {
-    const next = providers.find((p) => p.provider === provider);
-    const model = next?.models[0]?.id ?? null;
-    onChange({
-      ...settings,
-      provider,
-      model,
-      effort: reconcileEffort(effortsFor(next?.models ?? [], model), null),
-    });
-  };
-
-  const pickModel = (model: string) =>
-    onChange({ ...settings, model, effort: reconcileEffort(effortsFor(models, model), settings.effort) });
-
-  return (
-    <>
-      {providers.length > 1 && (
-        <Picker
-          className="picker"
-          label="AI"
-          value={settings.provider}
-          options={providers.map((p) => ({ value: p.provider, label: providerLabel(p.provider) }))}
-          placeholder="Choose an assistant"
-          disabled={disabled}
-          onPick={(picked) => pickProvider(picked as ProviderId)}
-        />
-      )}
-
-      <Picker
-        className="picker"
-        label="Model"
-        value={settings.model}
-        options={models.map((m) => ({ value: m.id, label: m.label }))}
-        /* Nothing enumerated: there is no choice to offer, so the row names the
-           stored id rather than pretending one is pickable. `Picker` disables an
-           empty row on its own. */
-        placeholder={models.length === 0 ? modelLabel(models, settings.model) : 'Choose a model'}
-        disabled={disabled}
-        onPick={pickModel}
-      />
-
-      {efforts.length > 0 && (
-        <Picker
-          className="picker"
-          label="Thinking"
-          value={settings.effort}
-          options={efforts.map((effort) => ({ value: effort, label: effort }))}
-          placeholder="Choose a thinking level"
-          disabled={disabled}
-          onPick={(effort) => onChange({ ...settings, effort })}
-        />
-      )}
-    </>
   );
 }

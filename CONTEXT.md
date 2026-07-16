@@ -153,8 +153,8 @@ src/ui/                       React. Renders the reducer, performs its effects.
   main.tsx                    entry: builds Platform, composes both service layers.
                               The one .tsx that imports Tauri directly — it IS the
                               platform edge; App.tsx and below stay host-agnostic.
-  App.tsx       66 tests      reducer host + effect performer + keyboard owner
-  components/  184 tests      services.ts (UI-facing port over src/app) + keymap /
+  App.tsx       70 tests      reducer host + effect performer + keyboard owner
+  components/  193 tests      services.ts (UI-facing port over src/app) + keymap /
                               fuzzy / format / session / host / notify / settings —
                               every real decision lives in a pure .ts module.
                               Picker.tsx is the ONLY file that writes a `<select>`;
@@ -252,7 +252,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 680 passed, 26 files
+npx vitest run                    # tests            → 693 passed, 27 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 31 passed
@@ -409,10 +409,12 @@ manual launch shows the window BY DESIGN; the overflow flyout's light-dismiss
 made the pre-fix bug flaky) in `docs/research/live-qa-first-run.md`.
 
 Also observed, real but left unfixed (deliberately): the footer pickers' labels crowd
-and overlap at rest width (cosmetic); a spawn-level failure surfaces as the
-generic "Something went wrong." rather than a taxonomy message (the mkdirp fix
-removed the only known trigger); and the tray tooltip carries no version (the
-spec puts the version in the tray MENU, which exists but went unopened in QA).
+and overlap at rest width (cosmetic — later escalated as #17/#18 and resolved by
+removing the footer pickers entirely; see the story-37 note in §8); a spawn-level
+failure surfaces as the generic "Something went wrong." rather than a taxonomy
+message (the mkdirp fix removed the only known trigger); and the tray tooltip
+carries no version (the spec puts the version in the tray MENU, which exists but
+went unopened in QA).
 
 **1c. What the third QA session found (2026-07-16): a transient codex enumeration
 failure was cached as "codex vanished".** Opening Settings showed *"Codex is not
@@ -585,17 +587,17 @@ halves do not make a green whole; the *joint* is a claim and needs its own test.
 `UiServices` is a port, and every port has this shape — the fake proves the caller,
 never the implementation.
 
-**Sibling residual, named rather than fixed: the Palette FOOTER pickers (story 37)
-have no behavioural test.** `Pickers` in `Palette.tsx` is the app's *second* surface
-for choosing model/effort, and its commit logic was checked by reading, not by
-running: effort commits verbatim (`{...settings, effort}`), a model switch keeps an
-effort the new model still takes, a provider switch resets it — which matches
-`SettingsView.tsx` and the first-run card. It is left untested deliberately and the
-risk is genuinely lower than #8 was: it is three lines of composition over pure
-functions that ARE tested (`reconcileEffort`, `effortsFor`) and a primitive that IS
-tested (`Picker`), and the guard makes a dead row unexpressible. But "correct by
-inspection" is exactly what #8 was too, right up until the mutation was run. If you
-touch that footer, test it first.
+**Sibling residual, RESOLVED BY DELETION: the Palette FOOTER pickers (story 37)
+no longer exist.** `Pickers` in `Palette.tsx` was the app's *second* surface for
+choosing model/effort, its commit logic checked by reading rather than running —
+a residual this file used to flag with "if you touch that footer, test it first".
+Nobody ever did; instead the surface itself went. The footer row could not hold
+AI + Model + Thinking + Discard + Refine + shortcut hints in 620px: #17 traded
+the resulting overlap for selects that clip their own value, #18 showed the clip
+squeezing values to one-letter stubs, and the fix was to stop duplicating the
+surface — Settings (which has room, labels, and tests) is now the single place
+the AI / model / thinking choice lives. The untested-composition risk did not
+get tested; it got deleted, which is better.
 
 **9. OPEN, UNREPRODUCED — a suspected timing flake in `App.test.tsx`.** Recorded
 because it was seen, not because it is understood; it is the one thing in this file

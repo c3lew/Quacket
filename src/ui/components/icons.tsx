@@ -94,10 +94,17 @@ export function DuckMark({ size = 18 }: { size?: number }) {
   );
 }
 
-/** Duck mark + wordmark. The window chrome's identity, top-left, always. */
+/**
+ * Duck mark + wordmark. The window chrome's identity, top-left, always.
+ *
+ * Also a drag handle (#19): the window is undecorated and Tauri starts a drag
+ * only when the mousedown TARGET carries the attribute, so the children are
+ * made pointer-inert (`.wordmark` in styles.css) to keep the span the target —
+ * otherwise the duck and the bold text would be dead spots in the title bar.
+ */
 export function Wordmark() {
   return (
-    <span className="wordmark">
+    <span className="wordmark" data-tauri-drag-region>
       <DuckMark size={18} />
       <b>Quacket</b>
     </span>

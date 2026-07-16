@@ -25,7 +25,6 @@ import {
 import {
   deriveOnboardingCards,
   deriveSetupWarnings,
-  readyProviders,
   type DetectedState,
   type MachineState,
 } from './../core/ui/onboarding.ts';
@@ -46,7 +45,7 @@ import { reconcileSettings, type SettingsNotice } from './components/settings.ts
 import { Icon, Spinner } from './components/icons.tsx';
 import { IssueList } from './components/IssueList.tsx';
 import { chordOf, keyToCommand, type View } from './components/keymap.ts';
-import { Body, Footer, Header, Panel, Pickers, WarningSlot, type Warning } from './components/Palette.tsx';
+import { Body, Footer, Header, Panel, WarningSlot, type Warning } from './components/Palette.tsx';
 import { Onboarding } from './components/Onboarding.tsx';
 import { RepoSwitcher } from './components/RepoSwitcher.tsx';
 import type { UiServices } from './components/services.ts';
@@ -1206,15 +1205,6 @@ export function App({ services }: AppProps) {
 
     return (
       <Footer>
-        {/* `readyProviders`, not a hand-rolled `models.length > 0`: "which
-            assistants can actually be used" is one question, and the onboarding
-            card, the Settings row and this picker must not answer it three ways. */}
-        <Pickers
-          settings={settings}
-          providers={readyProviders(detected)}
-          onChange={commitSettings}
-          disabled={state.stage === 'refining'}
-        />
         {discardButton()}
         <span className="spacer" />
         <button
