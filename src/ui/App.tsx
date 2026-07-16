@@ -159,6 +159,8 @@ export function App({ services }: AppProps) {
   /** A saved draft the store refused to reopen. News: nothing can be done with it. */
   const [draftLost, setDraftLost] = useState(false);
 
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState<Repo | null>(null);
   const [issues, setIssues] = useState<OpenIssue[]>([]);
@@ -445,6 +447,19 @@ export function App({ services }: AppProps) {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Same long-lived-window reasoning: a boot-only check would go stale within
+  // days, so it re-asks daily. `checkForUpdate` never rejects — silence is its
+  // failure mode — so there is no error path to render here.
+  useEffect(() => {
+    const checkUpdate = async () => {
+      const update = await services.checkForUpdate();
+      if (update !== null) setUpdateVersion(update.version);
+    };
+    void checkUpdate();
+    const timer = setInterval(() => void checkUpdate(), 24 * 60 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [services]);
 
   useEffect(() => services.onSummon(() => act({ type: 'summon' })), [act, services]);
 
@@ -973,6 +988,17 @@ export function App({ services }: AppProps) {
       });
     }
 
+    // Last on purpose: an available update is the least urgent line here — every
+    // warning above it is about THIS report going wrong.
+    if (updateVersion !== null) {
+      list.push({
+        id: 'update',
+        text: `Quacket ${updateVersion} is ready to install.`,
+        actionLabel: 'Update now',
+        onAction: () => void services.installUpdate(),
+      });
+    }
+
     return list;
   }, [
     addFrom,
@@ -990,6 +1016,8 @@ export function App({ services }: AppProps) {
     settings.provider,
     settingsNotice,
     setupWarnings,
+    services,
+    updateVersion,
   ]);
 
   const editing = state.editing;

@@ -128,6 +128,8 @@ function fakeServices(extra: Partial<UiServices> = {}) {
     pickImages: vi.fn(async () => []),
     onSummon: vi.fn(() => () => {}),
     onDropFiles: vi.fn(() => () => {}),
+    checkForUpdate: vi.fn(async (): Promise<{ version: string } | null> => null),
+    installUpdate: vi.fn(async () => {}),
     ...extra,
   };
   return spies as unknown as UiServices & typeof spies;
@@ -988,6 +990,36 @@ describe('gh auth expiring on an install that has been working for months', () =
     await click('Check again');
 
     await waitFor(() => expect(services.detect).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('a new version waiting on the release feed', () => {
+  const updatable = () =>
+    fakeServices({
+      checkForUpdate: vi.fn(async () => ({ version: '0.3.0' })),
+    });
+
+  it('offers it in the warning slot without blocking capture', async () => {
+    await boot(updatable());
+
+    expect(await screen.findByText('Quacket 0.3.0 is ready to install.')).toBeVisible();
+    expect(screen.getByPlaceholderText(CAPTURE_BOX)).toBeVisible();
+  });
+
+  it('installs on the one visible action', async () => {
+    const services = updatable();
+    await boot(services);
+    await screen.findByText('Quacket 0.3.0 is ready to install.');
+
+    await click('Update now');
+
+    await waitFor(() => expect(services.installUpdate).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays silent when the check finds nothing — the default fake is up to date', async () => {
+    await boot(fakeServices());
+
+    expect(screen.queryByText(/ready to install/)).toBeNull();
   });
 });
 

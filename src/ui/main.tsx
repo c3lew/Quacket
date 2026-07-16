@@ -22,6 +22,8 @@ import {
   sendNotification,
 } from '@tauri-apps/plugin-notification';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { check, type Update } from '@tauri-apps/plugin-updater';
 
 import { createServices } from '../app/services.ts';
 import { tauriRunner } from '../app/runner.ts';
@@ -68,6 +70,9 @@ function createPlatform(): Platform {
 
   /** What the OS currently holds for us, so a rebind can release it first. */
   let bound: string | null = null;
+
+  /** The update the last check found; `installUpdate` installs exactly this one. */
+  let pendingUpdate: Update | null = null;
 
   /** Show + focus, i.e. what the hotkey does. A summon is a summon. */
   const summon = async (): Promise<void> => {
@@ -142,6 +147,26 @@ function createPlatform(): Platform {
         if (event.payload.type === 'drop') handler(event.payload.paths);
       });
       return () => void unlisten.then((off) => off());
+    },
+
+    async checkForUpdate() {
+      try {
+        pendingUpdate = await check();
+        return pendingUpdate === null ? null : { version: pendingUpdate.version };
+      } catch {
+        // Offline, rate-limited, or the release feed 404s (it does while the
+        // repo is private). The Platform contract makes all of it "no update".
+        pendingUpdate = null;
+        return null;
+      }
+    },
+
+    async installUpdate() {
+      if (pendingUpdate === null) return;
+      // NSIS runs in passive mode (tauri.conf.json) and replaces the app on
+      // disk; the relaunch is what brings the new version back to the tray.
+      await pendingUpdate.downloadAndInstall();
+      await relaunch();
     },
   };
 }

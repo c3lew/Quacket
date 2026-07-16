@@ -63,6 +63,14 @@ export interface Platform {
   pickImages(): Promise<Array<Omit<ImageAttachment, 'id' | 'annotated'>>>;
   onSummon(handler: () => void): () => void;
   onDropFiles(handler: (paths: string[]) => void): () => void;
+  /**
+   * Null means "nothing to do" — up to date, endpoint unreachable, check failed.
+   * A tray app that lives for weeks must never nag about a network blip, so the
+   * failure modes collapse into silence by contract, like `detect`.
+   */
+  checkForUpdate(): Promise<{ version: string } | null>;
+  /** Downloads and installs what the last check found, then restarts the app. */
+  installUpdate(): Promise<void>;
 }
 
 export interface UiServices {
@@ -97,6 +105,8 @@ export interface UiServices {
   pickImages(): Promise<Array<Omit<ImageAttachment, 'id' | 'annotated'>>>;
   onSummon(handler: () => void): () => void;
   onDropFiles(handler: (paths: string[]) => void): () => void;
+  checkForUpdate(): Promise<{ version: string } | null>;
+  installUpdate(): Promise<void>;
 }
 
 export interface UiServiceDeps {
@@ -274,6 +284,8 @@ export function createUiServices({ core, platform, runner }: UiServiceDeps): UiS
     pickImages: platform.pickImages,
     onSummon: platform.onSummon,
     onDropFiles: platform.onDropFiles,
+    checkForUpdate: platform.checkForUpdate,
+    installUpdate: platform.installUpdate,
   };
 }
 

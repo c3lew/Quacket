@@ -116,6 +116,8 @@ function fakeServices(state: DetectedState = fresh(), extra: Partial<UiServices>
     pickImages: vi.fn(async () => []),
     onSummon: vi.fn(() => () => {}),
     onDropFiles: vi.fn(() => () => {}),
+    checkForUpdate: vi.fn(async (): Promise<{ version: string } | null> => null),
+    installUpdate: vi.fn(async () => {}),
     ...extra,
   };
   return spies as unknown as UiServices & typeof spies;

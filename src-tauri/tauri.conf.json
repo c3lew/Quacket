@@ -48,8 +48,8 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": ["https://quacket.invalid/updates/{{target}}/{{arch}}/{{current_version}}"],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI3MDNBODk1N0U1MDZBQUQKUldTdGFsQitsYWdESndHOWpKNEkxTGgxOFllM1MvQW5xcHpOMHB3TDRmcjQ3R1J2UkpOajNPK2IK",
+      "endpoints": ["https://github.com/c3lew/Quacket/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM1RkI2OEY0MzhCMjE1NjcKUldSbkZiSTQ5R2o3eGQvTWQyM05ycUF1ejBlOFBTN3lsUWEzbzhUbHcvNm04ak8vN0dCUmRuZ2QK",
       "windows": {
         "installMode": "passive"
       }
