@@ -456,7 +456,7 @@ describe('submit — new issue', () => {
     expect(emptyHeadings(body)).toEqual([]);
   });
 
-  it('produces an empty body rather than empty scaffolding when every section is stripped', async () => {
+  it('files the raw dump, not an empty body, when every section was image-only', async () => {
     const runner = scriptedRunner();
     const state = driveReducer(
       {
@@ -471,9 +471,13 @@ describe('submit — new issue', () => {
     await github(runner).submit(PUBLIC_REPO, draftFrom(state), { kind: 'new-issue' });
 
     const body = ghCalls(runner).find((c) => c.args.includes('create'))?.stdin ?? '';
-    // An honest empty body beats a heading over nothing. The title still carries
-    // the report; the user saw and approved this draft.
-    expect(body).toBe('');
+    // This assertion used to pin `''` — an honest empty body over empty
+    // scaffolding. The reducer now floors that case with the raw dump instead
+    // (the user's own words, so still zero fabrication), and this test drives
+    // the real reducer precisely so it fails when that decision moves.
+    expect(body).toBe('look at this\n');
+    expect(body).not.toContain('#');
+    expect(emptyHeadings(body)).toEqual([]);
   });
 
   it('drops an emptied section on the comment path too', async () => {

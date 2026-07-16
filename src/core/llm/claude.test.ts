@@ -119,6 +119,19 @@ describe('refine argv', () => {
 
     expect(runner.calls[0]!.timeoutMs).toBe(45_000);
   });
+
+  /**
+   * The default is hang detection, not a latency budget: the worst measured real
+   * call was 90.7 s (live-verification-round4.md), and a default that killed it
+   * would turn a success into a failure. Pinned so it cannot quietly shrink back
+   * under the measured tail.
+   */
+  it('defaults the timeout to 2x the worst measured refine', async () => {
+    const runner = ok();
+    await adapter(runner).refine(input());
+
+    expect(runner.calls[0]!.timeoutMs).toBe(180_000);
+  });
 });
 
 describe('refine with images', () => {

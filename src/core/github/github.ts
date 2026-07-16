@@ -13,7 +13,7 @@
 
 import type { ProcessRunner, ProcSpec } from '../runner.ts';
 import {
-  IMAGE_REF_SCHEME,
+  imageRefPattern,
   type Draft,
   type ImageAttachment,
   type OpenIssue,
@@ -63,14 +63,6 @@ const ASSETS_README = [
   'commit SHA, so deleting this branch breaks the images in those issues.',
   '',
 ].join('\n');
-
-/**
- * `![alt](quacket-image:img_1)` — refine runs before upload and cannot know the
- * final URL, so it emits ids and we rewrite them here. Built from the shared
- * constant so the scheme has exactly one definition.
- */
-const imageRefPattern = (): RegExp =>
-  new RegExp(`!?\\[([^\\]]*)\\]\\(${IMAGE_REF_SCHEME}([^)\\s]+)\\)`, 'g');
 
 /** Chunked because `String.fromCharCode(...bytes)` blows the stack on real PNGs. */
 const toBase64 = (bytes: Uint8Array): string => {

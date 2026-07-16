@@ -49,6 +49,16 @@ export const IMAGE_REF_SCHEME = 'quacket-image:';
 
 export const imageRef = (id: string): string => `${IMAGE_REF_SCHEME}${id}`;
 
+/**
+ * Matches `![alt](quacket-image:img_1)` — capture 1 is the alt text, capture 2
+ * the id. Lives beside the scheme so both judgments made from it — github.ts
+ * rewriting refs to real URLs, the reducer asking "is anything left once the
+ * images are gone?" — share one definition. A fresh RegExp per call because the
+ * `g` flag makes the object stateful.
+ */
+export const imageRefPattern = (): RegExp =>
+  new RegExp(`!?\\[([^\\]]*)\\]\\(${IMAGE_REF_SCHEME}([^)\\s]+)\\)`, 'g');
+
 // ── Attachments ─────────────────────────────────────────────────────────────
 
 export interface ImageAttachment {

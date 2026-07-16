@@ -252,7 +252,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 677 passed, 26 files
+npx vitest run                    # tests            → 680 passed, 26 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 27 passed
@@ -398,12 +398,19 @@ degraded silently, so the entry is kept only to record the answers:
 
 What replaced them is real and is **4** and **6** below.
 
-**4. An all-sections-dropped report files an issue with a title and no body.**
-`renderSection` correctly refuses to emit `## Actual` over nothing, so a report whose
-every section was stripped (e.g. filing without images when images were the only
-content) yields an empty body. This is honest, and the user saw and approved the
-draft — but if a floor is wanted, it belongs in the reducer disabling
-file-without-images when it would empty the report, not in the renderer.
+**4. FIXED — an all-sections-dropped report no longer files a title over an empty
+body.** `renderSection` still correctly refuses to emit `## Actual` over nothing —
+the renderer was never the bug. The floor now lives where this entry said it
+belonged: the reducer's `file-without-images` case checks whether stripping image
+refs (via the now-shared `imageRefPattern` in `types.ts` — one definition, both
+judgments) would empty every section, and falls back to the raw dump as the body,
+file-as-is shape (empty heading, verbatim text). The raw dump is the user's own
+writing, so the no-fabrication rule is untouched — it forbids inventing, not
+shipping unpolished. Refined title and type survive; a draft with even one
+surviving prose section is left alone. Pinned from both ends: `reducer.test.ts`
+(both directions) and `github.test.ts`, whose end-to-end probe drives the real
+reducer into the real `submit()` and asserts the exact `gh` stdin. Mutation:
+disabling the fallback reddens exactly 2 tests.
 
 **5. FIXED — an image could reach the screen without reaching the disk, on every
 route, and the draft it left behind could not be reopened.** Worth keeping in full,
@@ -453,14 +460,16 @@ until the draft folder is removed by discard, a confirmed submit, or `pruneOther
 `load()` reads only what the manifest names, so it is litter inside an ephemeral
 folder, not a defect — recorded so nobody re-derives it as one.
 
-**6. UNSETTLED — the 120 s adapter timeout has less headroom than the docs imply.**
-`DEFAULT_TIMEOUT_MS` is 120 s and the research reports quote Claude refines at
-2.3–6.3 s. Round 4 measured a live Claude golden path at **90.7 s** — same shape of
-call, ~1.3× off the timeout rather than ~19×. One machine, one day, and variance was
-not excluded, so this is a **concern, not a verdict**: it may be network, load, or a
-slower model than the one originally measured. It wants a second measurement across
-days/models and then an owner's decision, not a silent widening of the constant —
-which is why the constant was left alone.
+**6. SETTLED (owner's call) — `DEFAULT_TIMEOUT_MS` widened 120 s → 180 s.** Round 4
+measured a live golden path at **90.7 s** against the research docs' 2.3–6.3 s,
+leaving the old constant ~1.3× of headroom. The owner decided: the timeout's job is
+**hang detection, not a latency budget** — killing a slow-but-alive refine turns a
+success into a failure, while a genuinely hung child just delivers its bad news a
+minute later (the user has Esc and the background-failure notification either way).
+180 s is 2× the worst measurement. The default is now pinned by a test
+(`claude.test.ts`) so it cannot quietly shrink back under the measured tail; the
+90.7 s-vs-6.3 s discrepancy itself is still unexplained (one machine, one day) and
+still worth a second measurement if refines feel slow.
 
 **7. `--ignore-user-config` does not suppress `~/.codex/skills/`.** The flag is in
 (spec-mandated, and it stops the user's `config.toml` steering refines), but a skills

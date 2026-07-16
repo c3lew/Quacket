@@ -9,6 +9,7 @@
  */
 
 import { TITLE_MAX_CHARS } from '../refine/schema.ts';
+import { imageRefPattern } from '../types.ts';
 import type {
   Draft,
   ImageAttachment,
@@ -430,11 +431,41 @@ export function reduce(state: UiState, action: Action): Next {
     case 'submit-failed':
       return withNotice({ ...state, stage: 'draft', failure: action.error }, action.error);
 
-    case 'file-without-images':
+    /**
+     * Dropping the images can drop the whole report: a section whose only
+     * content was an image ref renders to nothing (github.ts judges emptiness
+     * AFTER stripping), so a draft where EVERY section was image-only would file
+     * as a title over an empty body — the user's actual words thrown away.
+     *
+     * The floor is the raw dump. It is the user's own writing, so putting it in
+     * the body cannot violate the no-fabrication rule — that rule forbids
+     * INVENTING, not shipping unpolished — and it is the same escape-hatch
+     * semantics file-as-is already has (empty heading, verbatim body). The
+     * refined title and type survive: they were derived from real input and the
+     * user has already seen and could edit them.
+     *
+     * Decided here and not in renderBody because the renderer dropping empty
+     * sections is CORRECT — this is a product floor, and floors belong in the
+     * reducer (it is also the only place that still knows `raw`).
+     */
+    case 'file-without-images': {
+      const refined = state.refined;
+      const allImageOnly =
+        refined !== null &&
+        refined.sections.every((s) => s.body.replace(imageRefPattern(), '').trim() === '');
       return {
-        state: { ...state, images: [], stage: 'submitting', failure: null },
+        state: {
+          ...state,
+          images: [],
+          stage: 'submitting',
+          failure: null,
+          ...(allImageOnly
+            ? { refined: { ...refined, sections: [{ heading: '', body: state.raw.trim() }] } }
+            : {}),
+        },
         effects: [{ type: 'submit' }],
       };
+    }
 
     /**
      * The ONLY deliberate way to lose work, and the only thing in the machine

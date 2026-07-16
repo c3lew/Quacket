@@ -322,6 +322,62 @@ describe('failure matrix', () => {
     expect(next.state.stage).toBe('submitting');
     expect(next.state.failure).toBeNull();
     expect(next.effects).toEqual([{ type: 'submit' }]);
+    // The mixed draft keeps its sections: dropping images must not touch prose.
+    expect(next.state.refined).toEqual(failed.refined);
+  });
+
+  /**
+   * The floor. A draft where EVERY section was image-only would render, refs
+   * stripped, to a title over an empty body — the user's actual words thrown
+   * away. Filing without images then falls back to the raw dump (the user's own
+   * writing, so no fabrication), with file-as-is shape: empty heading, verbatim
+   * body. Title and type survive — they were derived from real input.
+   */
+  it('falls back to the raw dump when dropping images would empty every section', () => {
+    const imageOnly = draft({
+      sections: [
+        { heading: 'Actual', body: '![screenshot](quacket-image:img_1)' },
+        { heading: 'Expected', body: ' ![](quacket-image:img_2) ' },
+      ],
+    });
+    const failed = run(
+      [
+        { type: 'add-image', image: image('img_1') },
+        { type: 'submit' },
+        { type: 'submit-failed', error: { kind: 'upload_failed', message: 'upload died' } },
+      ],
+      atDraft(imageOnly),
+    );
+
+    const next = reduce(failed, { type: 'file-without-images' });
+    expect(next.state.refined?.sections).toEqual([
+      { heading: '', body: 'tray icon vanished after explorer restart' },
+    ]);
+    expect(next.state.refined?.title).toBe(imageOnly.title);
+    expect(next.state.refined?.type).toBe(imageOnly.type);
+    expect(next.state.images).toEqual([]);
+    expect(next.effects).toEqual([{ type: 'submit' }]);
+  });
+
+  /** One surviving sentence is enough: the floor must not overwrite real prose. */
+  it('keeps the sections when even one survives the image strip', () => {
+    const oneSurvivor = draft({
+      sections: [
+        { heading: 'Actual', body: '![screenshot](quacket-image:img_1)' },
+        { heading: 'Repro steps', body: 'Restart explorer.exe' },
+      ],
+    });
+    const failed = run(
+      [
+        { type: 'add-image', image: image('img_1') },
+        { type: 'submit' },
+        { type: 'submit-failed', error: { kind: 'upload_failed', message: 'upload died' } },
+      ],
+      atDraft(oneSurvivor),
+    );
+
+    const next = reduce(failed, { type: 'file-without-images' });
+    expect(next.state.refined?.sections).toEqual(oneSurvivor.sections);
   });
 
   it('offers only Retry when issue creation fails after the upload', () => {

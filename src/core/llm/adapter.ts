@@ -83,8 +83,17 @@ export interface AdapterDeps {
   timeoutMs?: number;
 }
 
-/** Neither CLI has a timeout flag. Sized for Codex's high-effort tail (14–48 s). */
-export const DEFAULT_TIMEOUT_MS = 120_000;
+/**
+ * Neither CLI has a timeout flag, so this kill is the only thing standing between
+ * the user and a hung child — that is its job, hang detection, NOT a latency
+ * budget. Killing a slow-but-alive refine turns a success into a failure, and the
+ * user already has Esc for the waiting.
+ *
+ * Sized off the worst measured real call: 90.7 s for the full golden path
+ * (live-verification-round4.md), which left the old 120 s only 1.3× of headroom —
+ * a cold start or a heavy image away from an own goal. 2× the worst measurement.
+ */
+export const DEFAULT_TIMEOUT_MS = 180_000;
 
 /**
  * The second-turn prompt.
