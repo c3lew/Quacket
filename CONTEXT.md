@@ -360,11 +360,21 @@ what found the Codex spawn blocker. What that covers and what it does not:
   answer folded into the filed issue #5, skipped questions invented nothing),
   and the Ctrl+R repo switcher. The tray icon is exercised too (single- and
   double-click, live).
-- **STILL NEVER EXERCISED:** the annotation editor on a real canvas,
-  Esc-mid-submit and the background-failure OS notification in the real
-  window, the similar-issue card against a real lookalike candidate, the
-  issue-list view, the settings page, the updater, autostart, and the NSIS
-  installer. Multi-day soak (tray survival, memory) is untouched.
+- **A THIRD session cleared most of the rest** (Part 4 of the QA doc), all
+  driven live: settings page, autostart toggle (verified against the real HKCU
+  Run key, with the `--hidden` flag, both directions), issue-list view,
+  similar-issue card with a real lookalike + the comment-vs-issue switch (posted
+  a comment on an existing issue, no new issue, done screen "Added to issue
+  #3"), the annotation editor (pen/circle/undo/flatten/marked-badge/window
+  morph), Discard (UI + disk), and Esc-mid-submit (submission continued in the
+  background, slot freed on success). The **NSIS installer was built for the
+  first time** (`Quacket_0.1.0_x64-setup.exe` + a valid minisign updater sig).
+  This session also found and fixed the codex false-vanish cache bug (#1c below).
+- **STILL NEVER EXERCISED:** the updater's actual self-update (placeholder
+  endpoint; needs a published release), installing from the built NSIS exe +
+  SmartScreen, the background-failure OS notification specifically (Esc-mid-submit
+  was verified on a success; a clean live failure-while-hidden is hard to stage —
+  the notify path stays unit-verified), and multi-day tray soak.
 
 **1b. What the first real run found (2026-07-16), all fixed same-day.** Three
 defects, none visible to the suite, every one in the "tested from an mkdtemp'd
@@ -403,6 +413,21 @@ and overlap at rest width (cosmetic); a spawn-level failure surfaces as the
 generic "Something went wrong." rather than a taxonomy message (the mkdirp fix
 removed the only known trigger); and the tray tooltip carries no version (the
 spec puts the version in the tray MENU, which exists but went unopened in QA).
+
+**1c. What the third QA session found (2026-07-16): a transient codex enumeration
+failure was cached as "codex vanished".** Opening Settings showed *"Codex is not
+available any more, so Quacket switched to Claude Code"* while codex was working
+(the same session had just refined with it). `discovery-cache.codex.json` held an
+empty offering (`account: null, models: []`) even though `codex app-server`
+`model/list` returns fine in ~120 ms. `discovery.ts` cached the codex fallback
+with `cacheable: true` on ANY enumeration throw — so one slow app-server boot
+froze "codex has no models" for the 24 h TTL, which `reconcileSettings` reads as
+"provider vanished" and switches away from for a day. The claude path already did
+this right (`cacheable: false` on a broken probe); the codex path didn't honor
+its own documented rule. Fixed: a codex fallback is cacheable only when
+version-GATED, never when enumeration was attempted and threw. Two tests pin both
+sides, mutation-verified. This is the same "tested from the code, not from
+reality" class — every prior discovery test scripted a CLEAN app-server.
 
 **2. The ACL is proven by construction, not at runtime.** The tests verify that every
 plugin-fs API the frontend imports is granted, and cross-check the permission→command

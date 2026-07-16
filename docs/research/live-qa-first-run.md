@@ -131,10 +131,68 @@ questions invented nothing, `bug` label applied, draft slot freed on success.
 `settings.json` afterwards: `lastRepo`, `provider: codex`, `model:
 gpt-5.6-sol`, `effort: medium` all persisted.
 
+## Part 4 — the rest of the surfaces (same day, follow-up session)
+
+All driven through the real app. Everything below passed unless flagged.
+
+- **Settings page** — opened via the gear; two groups (AI / App), live account
+  line, all pickers populated. **This is where a real bug surfaced (below).**
+- **Autostart toggle** — checking "Start with Windows" wrote
+  `HKCU\…\Run\Quacket = "…\quacket.exe --hidden"` (the `--hidden` flag is the
+  design: an autostarted launch comes up tray-only); unchecking removed the key.
+  Verified against the real registry, both directions.
+- **Issue list view** — "Issues" showed all open issues with #number, title,
+  `bug` chip, relative time, updatedAt-desc order, and a per-row open-in-browser
+  icon. Live `gh` fetch.
+- **Similar-issue card, true positive** — typed a tray-vanish report against a
+  repo holding three lookalikes; refine returned all three in `similar_issues`
+  with per-candidate reasons; the inline card rendered (non-blocking, Submit
+  still primary = files new if ignored). Selecting #3 flipped the button to
+  **"Comment on #3"**; submitting posted the report as a comment on #3 with **no
+  new issue created** (latest stayed #5), no marker, and the done screen read
+  **"Added to issue #3"** (not "Issue filed"). One action switches back.
+- **Annotation editor** — clicking a thumbnail's Edit widened the window and
+  opened the canvas editor. Pen (freehand red stroke) and Circle (red ellipse)
+  both drew; Ctrl+Z removed the last shape; Done flattened (destructive v1),
+  narrowed the window back, and the thumbnail gained a **"✓ Marked" badge**.
+- **Discard** (Ctrl+Shift+D) — cleared the palette AND deleted the draft folder
+  on disk. The only route that loses a draft.
+- **Esc mid-submit** — submitted, then pressed Esc ~250 ms later (window hid
+  mid-send). Issue #6 still landed on GitHub — the submission continued in the
+  background — and the draft slot freed only on that confirmed success.
+- **NSIS installer** — `npx tauri build` produced
+  `Quacket_0.1.0_x64-setup.exe` (2.1 MB) plus a valid minisign updater
+  signature (`.sig`). First time the installer was ever built. `latest.json` is
+  a CI artifact (dist ticket #13), not a local one.
+
+### The bug this session found: a transient codex enumeration failure was cached as "codex vanished"
+
+Opening Settings showed a red banner — *"Codex is not available any more, so
+Quacket switched to Claude Code"* — while codex was demonstrably working (Part 3
+had just refined with it). Root cause, traced live:
+
+- `discovery-cache.codex.json` held `account: null, models: []` — an empty
+  offering — while `codex login status` and a direct `codex app-server`
+  `model/list` probe both worked fine (the catalog returns in ~120 ms).
+- `discovery.ts`'s codex fallback returned that empty offering with
+  `cacheable: true` on ANY enumeration throw (a slow app-server boot, a parse
+  hiccup), so one transient failure froze "codex has no models" for the 24 h
+  TTL. `reconcileSettings` then reads empty-models as "provider vanished",
+  fires the story-38 notice, and switches a codex user to Claude — stuck for a
+  day.
+- The claude path already got this right (`cacheable: false` on a broken
+  probe, with a comment saying exactly why); the codex path didn't honor its
+  own rule. **Fix:** a codex fallback is cacheable only when version-GATED (a
+  stable fact), never when enumeration was attempted and threw. Pinned by two
+  tests (a threw enumeration re-enumerates next call; a gated one caches),
+  mutation-verified.
+
 ## Still never exercised
 
-Annotation editor on a real canvas; Esc-mid-submit + background-failure OS
-notification in the real window; similar-issue card with live candidates (the
-schema returns empty for genuinely-unrelated candidates — a true-positive case
-needs a lookalike issue seeded); issue list view; settings page; updater;
-autostart toggle; NSIS installer; multi-day tray soak.
+The updater's actual self-update (endpoint is a placeholder `quacket.invalid`;
+needs a published release to exercise download→verify→apply); installing from
+the built NSIS `.exe` and the SmartScreen prompt; multi-day tray soak (survival
+across an explorer restart, idle memory); and the background-failure OS
+**notification** specifically (Esc-mid-submit was verified on a SUCCESS; a clean
+live failure while hidden is hard to stage without breaking the network — the
+notify-on-failure path stays unit-verified, round 2/3).

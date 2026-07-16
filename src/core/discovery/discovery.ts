@@ -92,8 +92,14 @@ async function enumerateOrFallback(
   version: string,
 ): Promise<Discovered> {
   // Version-gate: below the version enumeration was verified against, degrade
-  // explicitly rather than trust a surface that may not exist yet.
-  if (gte(version, MIN_VERSION[provider])) {
+  // explicitly rather than trust a surface that may not exist yet. A gated CLI
+  // is a stable fact, so its fallback is cacheable; an enumeration that was
+  // ATTEMPTED and threw is not — that distinction is the whole point of the
+  // flag (see the `Discovered` doc), and getting it wrong for codex let one
+  // slow app-server boot cache "codex has no models" for the full 24h TTL,
+  // which reconcileSettings then reads as "codex vanished" and switches away.
+  const gated = !gte(version, MIN_VERSION[provider]);
+  if (!gated) {
     try {
       const capabilities =
         provider === 'claude'
@@ -109,11 +115,14 @@ async function enumerateOrFallback(
   }
 
   // Codex has no curated rung: its only stable alias IS the CLI's own configured
-  // default, which rung 3 already delivers by passing no -m at all.
+  // default, which rung 3 already delivers by passing no -m at all. Cacheable
+  // only when we didn't just fail an enumeration — a version-gated codex is a
+  // real empty offering; a codex whose app-server threw is a transient we must
+  // not freeze for a day.
   if (provider !== 'claude') {
     return {
       capabilities: { provider, cliVersion: version, account: null, models: [] },
-      cacheable: true,
+      cacheable: gated,
     };
   }
 

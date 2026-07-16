@@ -651,6 +651,43 @@ describe('fallback chain', () => {
     expect(runner.sessions[0]?.killed).toBe(true);
   });
 
+  /**
+   * Live QA 2026-07-16: a slow app-server at boot made enumerateCodex throw, its
+   * empty fallback was cached, and reconcileSettings read "codex has no models"
+   * as "codex vanished" — falsely switching a codex user to Claude and STICKING
+   * for the 24h TTL. A THREW enumeration must not be cached (same rule the
+   * claude probe already followed); only a version-gated CLI's empty offering
+   * is a stable fact worth caching.
+   */
+  it('does NOT cache a codex enumeration that threw — it retries next time', async () => {
+    const flaky = new SpyRunner(codexRunner({ lines: ['garbage'] }));
+    await discover('codex', { runner: flaky, files: nodeFiles, baseDir, now: at(1000) });
+    expect(flaky.sessions).toHaveLength(1); // it did try the app-server
+
+    // Next call (app-server now healthy) must RE-ENUMERATE, not serve the empty
+    // cached result. If the empty fallback had been cached, this spawns nothing
+    // and returns models: [].
+    const healthy = new SpyRunner(codexRunner());
+    const caps = await discover('codex', { runner: healthy, files: nodeFiles, baseDir, now: at(1001) });
+    expect(healthy.sessions).toHaveLength(1);
+    expect(caps.models[0]?.id).toBe('gpt-5.6-sol');
+    expect(caps.models.length).toBeGreaterThan(1); // the real catalog, not the empty fallback
+    expect(caps.account).toBe('eva8isverygood@gmail.com/pro');
+  });
+
+  it('DOES cache a version-gated codex — an old CLI is a stable empty offering', async () => {
+    const old = new SpyRunner(codexRunner({ version: '0.100.0' }));
+    const caps = await discover('codex', { runner: old, files: nodeFiles, baseDir, now: at(1000) });
+    expect(caps.models).toEqual([]);
+    // Gated below CODEX_MIN_VERSION, so enumeration was never attempted...
+    expect(old.sessions).toHaveLength(0);
+
+    // ...and the next call serves it from cache without a version re-probe of the catalog.
+    const next = new SpyRunner(codexRunner({ version: '0.100.0' }));
+    await discover('codex', { runner: next, files: nodeFiles, baseDir, now: at(1001) });
+    expect(next.sessions).toHaveLength(0);
+  });
+
   it('never swallows not_authenticated into a fallback', async () => {
     // "Using CLI default" would be a lie here: rung 3 needs an authenticated CLI.
     const runner = new SpyRunner(
