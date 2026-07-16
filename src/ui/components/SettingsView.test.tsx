@@ -176,4 +176,19 @@ describe('SettingsView', () => {
     show({ provider: 'claude', model: 'sonnet' });
     expect(screen.getByText(/eva8isverygood@gmail.com/)).toBeInTheDocument();
   });
+
+  // ── The summon shortcut reads as keys, not as a registration string (#23) ──
+
+  it('shows the hotkey as one keycap per key, never the CmdOrCtrl token', () => {
+    show({ hotkey: 'CmdOrCtrl+Shift+Q' });
+
+    // The hotkey control is the only button on the screen — the rows are selects.
+    const button = screen.getByRole('button');
+    expect(Array.from(button.querySelectorAll('kbd')).map((k) => k.textContent)).toEqual([
+      'Ctrl',
+      'Shift',
+      'Q',
+    ]);
+    expect(screen.queryByText(/CmdOrCtrl/)).not.toBeInTheDocument();
+  });
 });

@@ -9,7 +9,6 @@
 
 export const PATHS = {
   // Chrome
-  duck: 'M8 3a4 4 0 0 1 4 4v1h2l-2 2.5c.6 4-2 6.5-6 6.5-3.5 0-6-2-6-5.5C0 8 2 6.5 4.5 6.5h.6A4 4 0 0 1 8 3Z',
   gear: 'M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm4.9-1.3a5.9 5.9 0 0 0 0-1.4l1.3-1-1.5-2.6-1.6.6a6 6 0 0 0-1.2-.7L9.6 2H6.4l-.3 1.6c-.4.2-.8.4-1.2.7l-1.6-.6L1.8 6.3l1.3 1a5.9 5.9 0 0 0 0 1.4l-1.3 1 1.5 2.6 1.6-.6c.4.3.8.5 1.2.7l.3 1.6h3.2l.3-1.6c.4-.2.8-.4 1.2-.7l1.6.6 1.5-2.6-1.3-1Z',
   close: 'm4 4 8 8M12 4l-8 8',
   back: 'm10 4-4 4 4 4',
@@ -50,7 +49,7 @@ export const PATHS = {
 export type IconName = keyof typeof PATHS;
 
 /** Solid marks. Everything else is a stroked line icon. */
-const FILLED = new Set<IconName>(['duck', 'github']);
+const FILLED = new Set<IconName>(['github']);
 
 export function Icon({
   name,
@@ -82,14 +81,29 @@ export function Icon({
 }
 
 /**
- * The product mark. The eye is punched in the panel colour rather than drawn in
- * a fixed grey, so the duck stays legible on whatever it sits on.
+ * The product mark: the same duck the tray and the desktop window show (#23),
+ * redrawn as vector so it scales with the UI instead of shipping a bitmap.
+ * Its colours are the tray icon's, sampled from the bundled art — fixed on
+ * purpose, an identity mark does not recolour with the theme.
  */
 export function DuckMark({ size = 18 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
-      <path d={PATHS.duck} fill="currentColor" />
-      <circle cx="9.4" cy="6.3" r="0.85" fill="var(--duck-eye)" />
+    <svg
+      className="duck-mark"
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <ellipse cx="3.4" cy="6.4" rx="1.5" ry="0.95" fill="#F27A1A" />
+      <circle cx="6.4" cy="5" r="2.7" fill="#F5C211" />
+      <path
+        d="M14.8 6.8C14.4 11.6 11.9 13.9 8.2 13.9C4.6 13.9 2.5 11.6 2.5 8.9C2.5 7.2 3.8 6.1 5.8 6.1C6.9 6.1 7.7 6.5 8.2 7.1C9.6 8.7 12.2 8.3 14.8 6.8Z"
+        fill="#F5C211"
+      />
+      <circle cx="6.7" cy="5" r="0.55" fill="#1A1A1A" />
     </svg>
   );
 }

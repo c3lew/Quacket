@@ -4,6 +4,7 @@ import { GitHubError } from '../../core/github/github.ts';
 import { ProviderError, type ModelInfo } from '../../core/types.ts';
 import {
   effortsFor,
+  hotkeyKeys,
   modelLabel,
   providerLabel,
   reconcileEffort,
@@ -117,6 +118,24 @@ describe('model and effort labels', () => {
 
   it('offers no efforts for an unknown model rather than guessing', () => {
     expect(effortsFor(models, 'nope')).toEqual([]);
+  });
+});
+
+describe('hotkeyKeys', () => {
+  it('splits the default accelerator into keycap labels, naming the modifier Ctrl', () => {
+    expect(hotkeyKeys('CmdOrCtrl+Shift+Q')).toEqual(['Ctrl', 'Shift', 'Q']);
+  });
+
+  it('keeps a single-character key like = as its own cap', () => {
+    expect(hotkeyKeys('CmdOrCtrl+=')).toEqual(['Ctrl', '=']);
+  });
+
+  it('reads a literal + key, which the recorder joins as "++"', () => {
+    expect(hotkeyKeys('CmdOrCtrl+Shift++')).toEqual(['Ctrl', 'Shift', '+']);
+  });
+
+  it('passes named keys through untouched', () => {
+    expect(hotkeyKeys('Alt+F5')).toEqual(['Alt', 'F5']);
   });
 });
 

@@ -8,7 +8,7 @@
 
 import type { ProviderCapabilities, Settings } from '../../core/types.ts';
 import { isProviderReady } from '../../core/ui/onboarding.ts';
-import { effortsFor, providerLabel, reconcileEffort } from './format.ts';
+import { effortsFor, hotkeyKeys, providerLabel, reconcileEffort } from './format.ts';
 import { Icon } from './icons.tsx';
 import { Picker } from './Picker.tsx';
 
@@ -126,7 +126,9 @@ export function SettingsView({
             className={recording ? 'hotkey-input recording' : 'hotkey-input'}
             onClick={() => onRecording(true)}
           >
-            {recording ? 'Press your shortcut…' : settings.hotkey}
+            {recording
+              ? 'Press your shortcut…'
+              : hotkeyKeys(settings.hotkey).map((key, i) => <kbd key={i}>{key}</kbd>)}
           </button>
         </div>
         {hotkeyError !== null && (

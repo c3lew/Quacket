@@ -21,7 +21,6 @@
   --ok: #4cc38a;
   --warn: #f2555a;
   --focus: #4d9fff;
-  --duck-eye: var(--panel);
 
   --radius: 7px;
   --mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
@@ -171,7 +170,6 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--acc);
   font-weight: 600;
   font-size: 13px;
   flex: none;
@@ -1049,6 +1047,8 @@ kbd {
 }
 
 .hotkey-show {
+  display: flex;
+  gap: 6px;
   padding: 6px 0 2px;
 }
 
@@ -1131,7 +1131,10 @@ input[type="checkbox"] {
 
 .hotkey-input {
   min-width: 190px;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;

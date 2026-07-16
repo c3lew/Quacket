@@ -1303,11 +1303,24 @@ describe('icons and labels', () => {
     expect(await screen.findByText('Ctrl+Enter')).toBeVisible();
   });
 
+  it('names real keys in the hotkey-conflict banner, never the CmdOrCtrl token', async () => {
+    await boot(
+      fakeServices({
+        hotkeyConflict: vi.fn(async () => ({ hotkey: 'CmdOrCtrl+=', reason: 'taken' })),
+      }),
+    );
+
+    expect(await screen.findByText(/Ctrl\+= is already taken/)).toBeVisible();
+    expect(document.body.textContent).not.toContain('CmdOrCtrl');
+  });
+
   it('draws every icon as inline SVG stroking currentColor', async () => {
     await boot(fakeServices());
     await type('tray icon vanished');
 
-    const svgs = [...document.querySelectorAll('svg')];
+    // The duck mark is the one deliberate exception: it is brand art in the
+    // tray icon's fixed colours (#23), not a state-tinted icon.
+    const svgs = [...document.querySelectorAll('svg:not(.duck-mark)')];
     expect(svgs.length).toBeGreaterThan(0);
     for (const svg of svgs) {
       expect(svg.getAttribute('stroke') ?? svg.querySelector('[fill="currentColor"]')).toBeTruthy();

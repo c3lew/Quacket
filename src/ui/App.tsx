@@ -39,7 +39,7 @@ import {
   type Recovery,
 } from './../core/ui/reducer.ts';
 import type { Thread } from './../core/llm/index.ts';
-import { settingsNoticeText, toFailure } from './components/format.ts';
+import { hotkeyKeys, settingsNoticeText, toFailure } from './components/format.ts';
 import { drain, hostReduce, initialHost } from './components/host.ts';
 import { reconcileSettings, type SettingsNotice } from './components/settings.ts';
 import { Icon, Spinner } from './components/icons.tsx';
@@ -967,7 +967,9 @@ export function App({ services }: AppProps) {
     if (conflict !== null) {
       list.push({
         id: 'hotkey',
-        text: `${conflict.hotkey} is already taken by another app, so it will not open Quacket.`,
+        // Through `hotkeyKeys`, so the banner names keys ("Ctrl+=") and never
+        // leaks the CmdOrCtrl registration token (#23).
+        text: `${hotkeyKeys(conflict.hotkey).join('+')} is already taken by another app, so it will not open Quacket.`,
         actionLabel: 'Change shortcut',
         onAction: () => setView('settings'),
       });

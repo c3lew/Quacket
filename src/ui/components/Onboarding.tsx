@@ -12,7 +12,7 @@
 
 import type { ProviderCapabilities, Settings } from '../../core/types.ts';
 import type { OnboardingCard, Problem, ProviderFix } from '../../core/ui/onboarding.ts';
-import { effortsFor, providerLabel, reconcileEffort } from './format.ts';
+import { effortsFor, hotkeyKeys, providerLabel, reconcileEffort } from './format.ts';
 import { Icon, Spinner } from './icons.tsx';
 import { CommandLine } from './Palette.tsx';
 import { Picker } from './Picker.tsx';
@@ -257,7 +257,11 @@ function HotkeyCard({
       </h3>
       <p className="lead">Quacket lives in the tray. This shortcut opens it from anywhere.</p>
       <div className="hotkey-show">
-        <kbd className="big">{card.hotkey}</kbd>
+        {hotkeyKeys(card.hotkey).map((key, i) => (
+          <kbd key={i} className="big">
+            {key}
+          </kbd>
+        ))}
       </div>
       <label className="checkrow">
         <input type="checkbox" checked={card.autostart} onChange={(e) => onAutostart(e.target.checked)} />

@@ -78,6 +78,25 @@ export function reconcileEffort(efforts: string[], current: string | null): stri
 }
 
 /**
+ * An accelerator string as keycap labels, one per key (#23). `CmdOrCtrl` is
+ * Tauri's registration token, not a key anyone's keyboard names — Quacket ships
+ * on Windows, so it reads "Ctrl". A literal `+` key arrives joined as `++`
+ * (the recorder joins mods and key with `+`), hence the empty-part handling.
+ */
+export function hotkeyKeys(accelerator: string): string[] {
+  const parts = accelerator.split('+');
+  const keys: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] === '') {
+      if (parts[i - 1] === '') keys.push('+');
+      continue;
+    }
+    keys.push(parts[i] === 'CmdOrCtrl' ? 'Ctrl' : (parts[i] as string));
+  }
+  return keys;
+}
+
+/**
  * The one-time notice when a stored choice stopped existing (#9, story 38).
  *
  * States what happened and what Quacket already did about it, in that order,

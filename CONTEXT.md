@@ -689,7 +689,10 @@ reproduce the real failure is not evidence.
 
 - **The user is not an engineer.** A control must carry its own meaning; a sentence
   teaching someone how to operate it is evidence the control failed. Icons are inline
-  SVG with `stroke="currentColor"` — never emoji, never typographic glyphs.
+  SVG with `stroke="currentColor"` — never emoji, never typographic glyphs. One
+  deliberate exception: the `DuckMark` brand mark is fixed-colour by design — it is
+  the tray icon redrawn as vector (#23), and an identity mark does not recolour with
+  state.
 - **No fabrication.** The refiner may not invent an issue number, a section, or a
   detail the user did not give. `dropInventedIssues` enforces this against the
   candidates actually shown.
