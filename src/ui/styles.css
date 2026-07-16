@@ -131,7 +131,10 @@ kbd {
   max-width: 100%;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  /* Must match the OS corner: Windows 11 rounds the undecorated window at 8px
+     (DWM, scales with DPI like CSS px). Anything else draws a second arc that
+     pulls away from the window edge at every corner (#22). */
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
