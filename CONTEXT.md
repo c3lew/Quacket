@@ -318,14 +318,16 @@ Two traps worth knowing, both now pinned by tests:
 
 ### What is still NOT settled
 
-> **Read this first if you are picking Quacket up.** v1 development stopped after
-> round 5. The five gates below are green and the numbers in this file were all
-> measured, but **green gates are not a running app** — the single most important
-> fact about this codebase is that *nobody has ever run it*. The ledger in #1 is
-> the honest boundary between what is proven and what is merely untested. Nothing
-> in it has been dropped to make the list shorter.
+> **Read this first if you are picking Quacket up.** The five gates below are
+> green and the numbers in this file were all measured. The app has now been run
+> for real — one full journey, hotkey to filed issue, on 2026-07-16
+> (`docs/research/live-qa-first-run.md`) — and that single run found three
+> defects the whole green suite could not see (#1b). Treat that as the ledger's
+> calibration: everything in the STILL-NEVER-EXERCISED list should be assumed to
+> hide the same class of surprise. Nothing here has been dropped to make the
+> list shorter.
 
-**1. PARTLY SETTLED — the CLIs have now been driven live; the app itself never has.**
+**1. MOSTLY SETTLED — the CLIs, the write leg, and one full app journey are live-verified.**
 Round 4 ran the real adapters against live `claude` 2.1.211, `codex-cli` 0.144.4 and
 `gh` 2.90.0 on this machine (`docs/research/live-verification-round4.md`), which is
 what found the Codex spawn blocker. What that covers and what it does not:
@@ -335,23 +337,58 @@ what found the Codex spawn blocker. What that covers and what it does not:
   the no-fabrication rule against live models, `codex exec resume`, `AGENTS.md`
   via `-C`, and every `gh` **read** argv. Separately, `cargo test` proves spawn,
   stdin EOF and timeout-kill against real child processes.
-- **NEVER EXERCISED — no evidence of any kind exists:**
-  - **The assembled Tauri app has never been launched.** `npm run tauri dev` has
-    not been run in any round. Nothing has driven the tray, the global hotkey, the
-    window show/hide, the updater, or plugin-fs's runtime scope check.
-  - **Nothing has ever been written to a real GitHub repo.** No issue, no comment,
-    no `quacket-assets` branch, no image blob. `gh` was exercised **read-only by
-    instruction** in every round. The entire submit *write* leg — upload → create,
-    the orphan branch, SHA-pinned URLs, label application, the comment-vs-issue
-    switch — is test-verified only, against `FakeRunner`.
-  - Consequence worth stating plainly: **the first person to run this will be the
-    first person to find out.** Round 4 is the precedent — the first contact with a
-    real CLI found a blocker that had passed every test for three rounds, because
-    a fake cannot refuse what the OS refuses. The write leg has not had its
-    round 4 yet.
+- **NOW EXERCISED — the first real run happened 2026-07-16** (see
+  `docs/research/live-qa-first-run.md`). The assembled app was launched via
+  `npm run tauri dev` and driven end to end through the real user journey:
+  global hotkey summon → first-run onboarding completed to the capture box →
+  CJK/EN mixed text pasted → refine against live `claude` → draft screen →
+  submit through real `gh` → done screen → **a real issue with a real `bug`
+  label on a real (throwaway, private) repo**. Silent draft restore, the
+  draft slot freeing only on confirmed success, discovery caches, and
+  plugin-fs's runtime scope check were all observed live. Separately, the
+  whole submit WRITE leg (orphan `quacket-assets` branch, Contents-API
+  upload, SHA-pinned URLs, private-repo blob links, label filtering,
+  comment-vs-issue, retry reusing blobs with zero spawns) was driven by the
+  real `createGitHub` over `node:child_process` against the same repo —
+  16/16 checks green.
+- The precedent held perfectly: **first contact found three real defects that
+  677 green tests could not see** (all fixed same-day, each with a
+  fails-without-the-fix test — see "What the first real run found" below).
+- **STILL NEVER EXERCISED:** codex refine in-app, the follow-up second turn
+  in-app, the annotation editor on a real canvas, Esc-mid-submit and the
+  background-failure OS notification in the real window, the similar-issue
+  card against real candidates, the issue-list view, the repo switcher, the
+  settings page, the updater, autostart, and the NSIS installer. Multi-day
+  soak (tray survival, memory) is untouched.
 
-The manual smoke checklist in the spec remains the only thing that can close the
-second half, and it should be run against a **throwaway repo**, not a real one.
+**1b. What the first real run found (2026-07-16), all fixed same-day.** Three
+defects, none visible to the suite, every one in the "tested from an mkdtemp'd
+world instead of from reality" class:
+
+- **Every text-only Claude refine died instantly**: the spawn's cwd
+  (`$TEMP/quacket`) had never been created — nothing on the no-image path
+  touches the fs, and every test injected a temp base that already existed.
+  Fixed in the adapter (`claude.ts` mkdirps its own cwd, as codex already did
+  for its session dir); pinned by a test whose base genuinely does not exist.
+- **An empty repo (zero commits) broke image upload with a generic error**: the
+  whole Git Data API answers `409 Git Repository is empty` (real transcript in
+  `github.test.ts`). The Contents API *would* work — live-verified — but on an
+  empty repo the branch it creates becomes the **default branch**, fronting the
+  user's new project with a Quacket README: exactly the pollution the label
+  rules forbid. So the fix is an honest plain-language refusal that routes to
+  [File without images].
+- **`lastRepo` was never persisted by a successful submit** — only the Ctrl+R
+  switcher wrote it, so a user filing against the `repos[0]` default kept
+  `lastRepo: null` forever, and `repos[0]` reorders whenever any other repo is
+  pushed. Story 16 says last-USED; now the submit success path commits it.
+
+Also observed, real but left unfixed (deliberately): the footer pickers' labels crowd
+and overlap at rest width (cosmetic); a spawn-level failure surfaces as the
+generic "Something went wrong." rather than a taxonomy message (the mkdirp fix
+removed the only known trigger); and the QA report text itself flagged two
+suspected product behaviours nobody has verified — double-clicking the tray
+icon likely toggles the window twice (open-then-close = looks dead), and the
+tray tooltip carries no version. Suspicions, not findings: neither was tested.
 
 **2. The ACL is proven by construction, not at runtime.** The tests verify that every
 plugin-fs API the frontend imports is granted, and cross-check the permission→command

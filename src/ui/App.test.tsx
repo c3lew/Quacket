@@ -204,6 +204,27 @@ describe('a submit that fails while the window is hidden', () => {
     expect(services.notify).not.toHaveBeenCalled();
   });
 
+  /**
+   * Story 16 says last-USED, not last-picked. Live QA filed a real issue through
+   * the real app and found lastRepo still null afterwards: it was only written by
+   * the Ctrl+R switcher, so a user filing against the repos[0] default never got
+   * it persisted — and repos[0] reorders whenever any other repo is pushed,
+   * silently retargeting their next report.
+   */
+  it('persists the repo as last-used on a successful submit, without the switcher', async () => {
+    const services = fakeServices();
+    await toDraftScreen(services);
+    vi.mocked(services.saveSettings).mockClear();
+
+    await click(/Submit issue/);
+
+    await waitFor(() =>
+      expect(vi.mocked(services.saveSettings).mock.calls.some(
+        ([s]) => s.lastRepo === REPO.nameWithOwner,
+      )).toBe(true),
+    );
+  });
+
   it('stays silent when the window is up — the error card is already on screen', async () => {
     const services = fakeServices({
       submit: vi.fn(async () => {

@@ -1,12 +1,16 @@
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { FakeRunner } from '../testing/fake-runner.ts';
+import { joinPath } from '../files.ts';
 import { nodeFiles } from '../testing/node-files.ts';
+import { FakeRunner } from '../testing/fake-runner.ts';
 import { ProviderError } from '../types.ts';
 import type { ImageAttachment } from '../types.ts';
 import { createClaudeAdapter } from './claude.ts';
 import type { RefineInput } from './adapter.ts';
 
-const TEMP = '/tmp/quacket-test';
+// A real path: refine now mkdirps its cwd for real (see 'creates its cwd').
+const TEMP = joinPath(tmpdir().replaceAll('\\', '/'), 'quacket-claude-test');
 const SCHEMA = { type: 'object', properties: { title: { type: 'string' } } };
 
 const resultEvent = (over: Record<string, unknown> = {}): string =>
@@ -131,6 +135,27 @@ describe('refine argv', () => {
     await adapter(runner).refine(input());
 
     expect(runner.calls[0]!.timeoutMs).toBe(180_000);
+  });
+
+  /**
+   * Live QA (2026-07-16) found every text-only refine in the shipped app dying
+   * instantly: the spawn's cwd ($TEMP/quacket) had never been created, and the
+   * no-image path touches nothing else on the fs that would create it. Every
+   * test had injected an mkdtemp'd base that already existed — the exact
+   * "tested from the code instead of from reality" gap. So this one hands the
+   * adapter a base that does NOT exist and asserts refine creates it for real.
+   */
+  it('creates its cwd before spawning, so a fresh machine can refine', async () => {
+    const missing = joinPath(TEMP, 'never-created');
+    await nodeFiles.remove(missing);
+    expect(existsSync(missing)).toBe(false);
+
+    await createClaudeAdapter({ runner: ok(), files: nodeFiles, tempDirBase: missing }).refine(
+      input(),
+    );
+
+    expect(existsSync(missing)).toBe(true);
+    await nodeFiles.remove(missing);
   });
 });
 

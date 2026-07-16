@@ -150,14 +150,29 @@ export function createGitHub(runner: ProcessRunner, options: GitHubOptions = {})
 
     const failed = 'Could not create the image branch in this repo.';
     // The trees API inlines text blobs, so the README needs no separate blob call.
-    const tree = await ghOk(
-      'upload_failed',
-      failed,
+    const tree = await gh(
       ['api', '--method', 'POST', `repos/${nameWithOwner}/git/trees`, '--input', '-'],
       JSON.stringify({
         tree: [{ path: 'README.md', mode: '100644', type: 'blob', content: ASSETS_README }],
       }),
     );
+    /*
+     * A repo with no commits refuses the whole Git Data API with this 409 (live:
+     * `gh: Git Repository is empty. (HTTP 409)`). The Contents API would work —
+     * verified — but on an empty repo the branch it creates becomes the repo's
+     * DEFAULT branch, leaving the user's brand-new project fronted by a Quacket
+     * assets README. That is exactly the pollution the label rules forbid, so
+     * the honest move is to not attach: this error routes to the failure matrix,
+     * where [File without images] still files the report.
+     */
+    if (tree.exitCode !== 0 && /repository is empty/i.test(tree.stderr)) {
+      throw new GitHubError(
+        'upload_failed',
+        'This repo has no commits yet, so images cannot be attached. File without images, or push a first commit and retry.',
+      );
+    }
+    if (tree.timedOut) throw new GitHubError('upload_failed', `${failed} GitHub took too long to respond.`);
+    if (tree.exitCode !== 0) throw new GitHubError('upload_failed', failed, tree.stderr.trim());
     const commit = await ghOk(
       'upload_failed',
       failed,

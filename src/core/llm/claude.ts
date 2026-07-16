@@ -129,6 +129,16 @@ export const createClaudeAdapter = (deps: AdapterDeps): LlmAdapter => {
     stdin: string | undefined,
     model: string | null,
   ): Promise<{ draft: unknown; result: Record<string, unknown> }> => {
+    /*
+     * The cwd must exist or the spawn dies instantly ("directory name is
+     * invalid"), and nothing else on the no-image path ever touches the fs —
+     * live QA found the shipped app failing every text-only refine this way,
+     * while every test had injected an mkdtemp'd base that already existed.
+     * The adapter owns its cwd (idempotent, and survives a temp cleaner
+     * emptying $TEMP mid-session), exactly as the codex adapter mkdirps its
+     * session dir.
+     */
+    await deps.files.mkdirp(deps.tempDirBase);
     const spec: ProcSpec = {
       cmd: 'claude',
       args,

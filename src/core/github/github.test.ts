@@ -312,6 +312,30 @@ describe('uploadImages', () => {
       kind: 'upload_failed',
     });
   });
+
+  /**
+   * A repo with no commits refuses the whole Git Data API. Live-verified
+   * 2026-07-16 against a fresh private repo — the stderr below is the real gh
+   * 2.90.0 output, not a guess. The Contents API *would* work, but on an empty
+   * repo the branch it creates becomes the DEFAULT branch (also live-verified),
+   * fronting the user's new project with a Quacket README — so the honest move
+   * is a plain-language refusal that routes to [File without images].
+   */
+  it('explains an empty repo in plain language instead of a generic upload error', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['repos/c3lew/Quacket/git/trees'] },
+      {
+        exitCode: 1,
+        stdout: '{"message":"Git Repository is empty.","documentation_url":"https://docs.github.com/rest/git/trees#create-a-tree","status":"409"}',
+        stderr: 'gh: Git Repository is empty. (HTTP 409)',
+      },
+    );
+
+    await expect(github(runner).uploadImages(PUBLIC_REPO, [image('img_1')])).rejects.toMatchObject({
+      kind: 'upload_failed',
+      message: expect.stringContaining('no commits yet'),
+    });
+  });
 });
 
 describe('submit — new issue', () => {

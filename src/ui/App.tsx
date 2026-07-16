@@ -242,6 +242,15 @@ export function App({ services }: AppProps) {
     }
   }, [act, services]);
 
+  // Above runSubmit, which persists the last-used repo through it on success.
+  const commitSettings = useCallback(
+    (next: Settings) => {
+      setSettings(next);
+      void services.saveSettings(next);
+    },
+    [services],
+  );
+
   const runSubmit = useCallback(async () => {
     const current = stateRef.current;
     const target = repoRef.current;
@@ -273,6 +282,16 @@ export function App({ services }: AppProps) {
         setLastSent(entry);
         setRecent((list) => pushRecent(list, entry));
       }
+      /*
+       * Story 16 says last-USED, not last-picked: a user who files against the
+       * repos[0] default without ever touching the switcher must still get the
+       * same repo preselected next time. Live QA caught this staying null after
+       * a successful submit — and repos[0] reorders whenever any other repo is
+       * pushed, silently retargeting their next report.
+       */
+      if (settingsRef.current.lastRepo !== target.nameWithOwner) {
+        commitSettings({ ...settingsRef.current, lastRepo: target.nameWithOwner });
+      }
       act({ type: 'submit-ok', result });
     } catch (error) {
       act({ type: 'submit-failed', error: toFailure(error) });
@@ -280,7 +299,7 @@ export function App({ services }: AppProps) {
       // Whatever DID upload is recorded either way, so a retry reuses the blobs.
       act({ type: 'images-uploaded', uploaded: uploadedFrom(draft.images) });
     }
-  }, [act, services]);
+  }, [act, commitSettings, services]);
 
   const perform = useCallback(
     async (effect: Effect) => {
@@ -447,14 +466,6 @@ export function App({ services }: AppProps) {
     if (!shouldSaveDraft(state)) return;
     void services.saveDraft(toDraft(state, draftId.current, repo?.nameWithOwner ?? NO_REPO));
   }, [repo, services, state]);
-
-  const commitSettings = useCallback(
-    (next: Settings) => {
-      setSettings(next);
-      void services.saveSettings(next);
-    },
-    [services],
-  );
 
   const commitAutostart = useCallback(
     (on: boolean) => {
