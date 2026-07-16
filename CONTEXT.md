@@ -255,7 +255,7 @@ npx tsc --noEmit                  # typecheck        → 0 errors
 npx vitest run                    # tests            → 680 passed, 26 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
-cd src-tauri && cargo test        # Rust             → 27 passed
+cd src-tauri && cargo test        # Rust             → 31 passed
 
 npm run tauri dev                 # run the app
 ```
@@ -359,7 +359,8 @@ what found the Codex spawn blocker. What that covers and what it does not:
   background-failure OS notification in the real window, the similar-issue
   card against real candidates, the issue-list view, the repo switcher, the
   settings page, the updater, autostart, and the NSIS installer. Multi-day
-  soak (tray survival, memory) is untouched.
+  soak (tray survival, memory) is untouched. (The tray icon itself HAS now
+  been exercised: single- and double-click, live, via the overflow flyout.)
 
 **1b. What the first real run found (2026-07-16), all fixed same-day.** Three
 defects, none visible to the suite, every one in the "tested from an mkdtemp'd
@@ -382,13 +383,22 @@ world instead of from reality" class:
   `lastRepo: null` forever, and `repos[0]` reorders whenever any other repo is
   pushed. Story 16 says last-USED; now the submit success path commits it.
 
+A fourth defect from the same run was confirmed and fixed in a follow-up
+session: **double-clicking the tray icon toggled the window twice** (the second
+press becomes `WM_LBUTTONDBLCLK` but the second release still arrives as a plain
+`Click{Up}` — captured live by instrumenting the handler and double-clicking the
+real icon). `src-tauri/src/tray_gate.rs` now gates the toggle: act on the first
+`Click{Up}`, swallow the rest of the burst within the user's real
+`GetDoubleClickTime()`. Verified live in both directions; 4 unit tests pin it,
+including the captured 129 ms tail. Details + two collateral clarifications (a
+manual launch shows the window BY DESIGN; the overflow flyout's light-dismiss
+made the pre-fix bug flaky) in `docs/research/live-qa-first-run.md`.
+
 Also observed, real but left unfixed (deliberately): the footer pickers' labels crowd
 and overlap at rest width (cosmetic); a spawn-level failure surfaces as the
 generic "Something went wrong." rather than a taxonomy message (the mkdirp fix
-removed the only known trigger); and the QA report text itself flagged two
-suspected product behaviours nobody has verified — double-clicking the tray
-icon likely toggles the window twice (open-then-close = looks dead), and the
-tray tooltip carries no version. Suspicions, not findings: neither was tested.
+removed the only known trigger); and the tray tooltip carries no version (the
+spec puts the version in the tray MENU, which exists but went unopened in QA).
 
 **2. The ACL is proven by construction, not at runtime.** The tests verify that every
 plugin-fs API the frontend imports is granted, and cross-check the permission→command

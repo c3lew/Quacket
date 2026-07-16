@@ -10,6 +10,7 @@
 
 mod dnd;
 mod proc;
+mod tray_gate;
 
 #[cfg(test)]
 mod capabilities;
@@ -99,13 +100,24 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
+            // A double-click delivers TWO Click{Up}s (the second press becomes
+            // DBLCLK, the second release does not — captured live, see
+            // tray_gate.rs). Ungated, the toggle runs twice and the window
+            // opens-then-closes. The gate makes the burst one gesture.
+            static GATE: std::sync::Mutex<Option<tray_gate::ClickGate>> = std::sync::Mutex::new(None);
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
                 ..
             } = event
             {
-                toggle_capture(tray.app_handle());
+                let mut gate = GATE.lock().expect("tray gate lock");
+                let admitted = gate
+                    .get_or_insert_with(|| tray_gate::ClickGate::new(tray_gate::double_click_interval()))
+                    .admit(std::time::Instant::now());
+                if admitted {
+                    toggle_capture(tray.app_handle());
+                }
             }
         })
         .build(app)?;

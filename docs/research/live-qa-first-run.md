@@ -81,10 +81,31 @@ screenshot verified at every stage:
 - A spawn-level failure showed the generic "Something went wrong." banner rather
   than a taxonomy message. The mkdirp fix removed the only known trigger, but the
   fallback path is still generic.
-- Suspected (UNTESTED — reported in the QA issue itself, then noticed it might be
-  real): double-clicking the tray icon probably toggles the window twice
-  (open-then-close reads as "nothing happened"); the tray tooltip has no version
-  (the spec puts the version in the tray menu — the menu was not opened in this QA).
+- ~~Suspected (UNTESTED)~~ **CONFIRMED AND FIXED (same day, follow-up session):
+  double-clicking the tray icon toggled the window twice.** Verified by
+  instrumenting `on_tray_icon_event` and driving a real double-click on the real
+  tray icon (located via UIA in the Win11 overflow flyout). The captured
+  delivery: `Click{Down}` → `Click{Up}` → `DoubleClick`(+129 ms) → `Click{Up}` —
+  the second PRESS becomes `WM_LBUTTONDBLCLK` but the second RELEASE still
+  arrives as a plain `Click{Up}`, so toggle-on-every-Up ran twice. Fix:
+  `tray_gate.rs` — a click gate that acts on the first `Click{Up}` and swallows
+  any further `Click{Up}` inside the user's real `GetDoubleClickTime()` interval
+  (not a hardcoded 500 ms; accessibility settings can raise it to 900 ms).
+  Single-click stays zero-latency; double-click toggles ONCE. Acceptance was
+  live, both directions, with gate decisions logged: hidden + double-click →
+  `admitted=true(show)`, `admitted=false(swallowed)`, window visible and stays;
+  visible + double-click → hidden. 4 unit tests pin the gate, including the
+  captured 129 ms tail and a triple-click burst (the swallowed tail must not
+  extend the window, or a click-happy user locks themselves out).
+
+  Two things this investigation also settled: a **manual** launch (no
+  `--hidden`) deliberately shows the window at startup (`lib.rs` setup) — that
+  is design, not a bug, but it invalidated every "fresh instance = hidden" test
+  assumption until spotted; and the earlier "double-click seemed fine" pre-fix
+  observation was the overflow flyout's light-dismiss racing the second click,
+  which is why flyout icons flaked while a pinned icon would fail reliably.
+- Still untested: the tray tooltip has no version (the spec puts the version in
+  the tray MENU, which exists — `Quacket v0.1.0` — but was not opened in this QA).
 
 ## Still never exercised
 
