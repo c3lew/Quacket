@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readFile } from '@tauri-apps/plugin-fs';
-import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
+import { isRegistered, register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import {
   isPermissionGranted,
   onAction,
@@ -30,7 +30,7 @@ import { tauriRunner } from '../app/runner.ts';
 import { DEFAULT_SETTINGS, type ImageAttachment } from '../core/types.ts';
 import { App } from './App.tsx';
 import { createNotifier } from './components/notify.ts';
-import { toggleOnHotkey } from './hotkey.ts';
+import { frontendOwnsHotkey, liveHotkeyConflict, toggleOnHotkey } from './hotkey.ts';
 import { createUiServices, type Platform } from './components/services.ts';
 import './styles.css';
 
@@ -95,13 +95,19 @@ function createPlatform(): Platform {
 
     /**
      * Rebinding releases the old shortcut first: registering a second one leaves
-     * both live, and the stale one keeps firing forever.
+     * both live, and the stale one keeps firing forever. On the FIRST rebind the
+     * old shortcut is the default Rust bound at boot — release that one too, or
+     * the key the user moved away from keeps summoning (#21). `isRegistered`
+     * guards the case where the default never registered (taken by another app).
      */
     async applyHotkey(hotkey) {
       try {
-        if (bound !== null) await unregister(bound);
+        const previous = bound ?? DEFAULT_SETTINGS.hotkey;
+        if (await isRegistered(previous)) await unregister(previous);
         await register(hotkey, (event) => {
-          if (event.state === 'Pressed')
+          // Rust's global handler already toggles the default, whoever
+          // registered it — see frontendOwnsHotkey for the ownership split.
+          if (event.state === 'Pressed' && frontendOwnsHotkey(hotkey, DEFAULT_SETTINGS.hotkey))
             void toggleOnHotkey({ isVisible: () => window.isVisible(), hide: () => window.hide(), summon });
         });
         bound = hotkey;
@@ -177,12 +183,23 @@ function createPlatform(): Platform {
 async function main(): Promise<void> {
   const platform = createPlatform();
   const core = await createServices();
-  const services = createUiServices({ core, platform, runner: tauriRunner });
 
   // Rust registered the default hotkey at startup so the app is summonable before
-  // the webview boots. Take over only when the user's stored one differs.
-  const stored = core.settings.get().hotkey;
-  if (stored !== DEFAULT_SETTINGS.hotkey) void platform.applyHotkey(stored);
+  // the webview boots; liveHotkeyConflict takes over when the stored one differs.
+  // Kicked off eagerly — the rebind must not wait for the app to ask about the
+  // banner — and the app's hotkeyConflict answers for the STORED hotkey, not
+  // whatever happened to the default (#21).
+  const conflict = liveHotkeyConflict({
+    stored: core.settings.get().hotkey,
+    defaultHotkey: DEFAULT_SETTINGS.hotkey,
+    nativeConflict: platform.hotkeyConflict,
+    rebind: platform.applyHotkey,
+  });
+  const services = createUiServices({
+    core,
+    platform: { ...platform, hotkeyConflict: () => conflict },
+    runner: tauriRunner,
+  });
 
   const root = document.getElementById('root');
   if (root === null) throw new Error('#root is missing from index.html');
