@@ -354,13 +354,17 @@ what found the Codex spawn blocker. What that covers and what it does not:
 - The precedent held perfectly: **first contact found three real defects that
   677 green tests could not see** (all fixed same-day, each with a
   fails-without-the-fix test — see "What the first real run found" below).
-- **STILL NEVER EXERCISED:** codex refine in-app, the follow-up second turn
-  in-app, the annotation editor on a real canvas, Esc-mid-submit and the
-  background-failure OS notification in the real window, the similar-issue
-  card against real candidates, the issue-list view, the repo switcher, the
-  settings page, the updater, autostart, and the NSIS installer. Multi-day
-  soak (tray survival, memory) is untouched. (The tray icon itself HAS now
-  been exercised: single- and double-click, live, via the overflow flyout.)
+- **A follow-up session closed three more gaps live** (Part 3 of the QA doc):
+  codex refine in-app (provider switch in the footer, model auto-followed),
+  the **follow-up second turn via `codex exec resume` in the real app** (one
+  answer folded into the filed issue #5, skipped questions invented nothing),
+  and the Ctrl+R repo switcher. The tray icon is exercised too (single- and
+  double-click, live).
+- **STILL NEVER EXERCISED:** the annotation editor on a real canvas,
+  Esc-mid-submit and the background-failure OS notification in the real
+  window, the similar-issue card against a real lookalike candidate, the
+  issue-list view, the settings page, the updater, autostart, and the NSIS
+  installer. Multi-day soak (tray survival, memory) is untouched.
 
 **1b. What the first real run found (2026-07-16), all fixed same-day.** Three
 defects, none visible to the suite, every one in the "tested from an mkdtemp'd

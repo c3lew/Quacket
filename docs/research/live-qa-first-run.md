@@ -107,9 +107,34 @@ screenshot verified at every stage:
 - Still untested: the tray tooltip has no version (the spec puts the version in
   the tray MENU, which exists — `Quacket v0.1.0` — but was not opened in this QA).
 
+## Part 3 — codex in-app + the follow-up second turn (same day, follow-up session)
+
+Driven through the real app exactly like Part 2. The chain: footer AI picker →
+Codex (model auto-followed to `GPT-5.6-Sol`, thinking `medium` — the round-5
+provider-switch fix, live) → **Ctrl+R repo switcher** (fuzzy "qa", match
+highlighting, Private badges, Current badge — all correct) → pasted a
+deliberately vague CJK/EN report ("捲動列表的時候有時候會卡一下 scroll lag??…")
+→ refine via live `codex exec`.
+
+Turn 1 came back exactly per contract: type bug, title "Scrolling sometimes
+lags in long lists", **only** Repro steps + Actual (nothing else was mentioned —
+no-fabrication held on a live codex model), three sharp follow-up questions,
+empty `similar_issues` (the repo's tray issues are genuinely unrelated).
+
+Answered ONE question in the draft UI ("the recent-sent list on the done
+screen, around 200 items"), skipped the rest, submitted. The submit ran the
+**`codex exec resume` second turn in the real app** and the fold-in is visible
+in the filed result ([issue #5](https://github.com/c3lew/quacket-qa-target/issues/5)):
+title sharpened to "Recent-sent list scrolling lags around 200 items", the
+answer integrated INTO Repro steps (not appended as Q&A), the two skipped
+questions invented nothing, `bug` label applied, draft slot freed on success.
+`settings.json` afterwards: `lastRepo`, `provider: codex`, `model:
+gpt-5.6-sol`, `effort: medium` all persisted.
+
 ## Still never exercised
 
-Codex refine in-app; the follow-up second turn in-app; annotation editor on a
-real canvas; Esc-mid-submit + background-failure OS notification in the real
-window; similar-issue card with live candidates; issue list view; repo switcher;
-settings page; updater; autostart toggle; NSIS installer; multi-day tray soak.
+Annotation editor on a real canvas; Esc-mid-submit + background-failure OS
+notification in the real window; similar-issue card with live candidates (the
+schema returns empty for genuinely-unrelated candidates — a true-positive case
+needs a lookalike issue seeded); issue list view; settings page; updater;
+autostart toggle; NSIS installer; multi-day tray soak.
