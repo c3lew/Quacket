@@ -30,6 +30,7 @@ import { tauriRunner } from '../app/runner.ts';
 import { DEFAULT_SETTINGS, type ImageAttachment } from '../core/types.ts';
 import { App } from './App.tsx';
 import { createNotifier } from './components/notify.ts';
+import { toggleOnHotkey } from './hotkey.ts';
 import { createUiServices, type Platform } from './components/services.ts';
 import './styles.css';
 
@@ -74,7 +75,8 @@ function createPlatform(): Platform {
   /** The update the last check found; `installUpdate` installs exactly this one. */
   let pendingUpdate: Update | null = null;
 
-  /** Show + focus, i.e. what the hotkey does. A summon is a summon. */
+  /** Show + focus. The hotkey toggles (see `toggleOnHotkey`); a notification
+   * click summons unconditionally — dismissing on a click makes no sense. */
   const summon = async (): Promise<void> => {
     await window.show();
     await window.setFocus();
@@ -99,7 +101,8 @@ function createPlatform(): Platform {
       try {
         if (bound !== null) await unregister(bound);
         await register(hotkey, (event) => {
-          if (event.state === 'Pressed') void summon();
+          if (event.state === 'Pressed')
+            void toggleOnHotkey({ isVisible: () => window.isVisible(), hide: () => window.hide(), summon });
         });
         bound = hotkey;
         return null;

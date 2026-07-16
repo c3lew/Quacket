@@ -23,7 +23,7 @@ use tauri::{
 };
 use tauri_plugin_fs::FsExt;
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// The one webview. Created hidden at startup and never destroyed — see `hide_on_close`.
 const CAPTURE_WINDOW: &str = "main";
@@ -149,9 +149,17 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        show_capture(app);
+                .with_handler(|app, shortcut, event| {
+                    // This global handler fires for EVERY registered shortcut —
+                    // including a custom hotkey the frontend registers, whose JS
+                    // callback (toggleOnHotkey in src/ui) already toggles; the plugin
+                    // dispatches both handlers for one press, and two toggles cancel
+                    // out. Acting on the default only keeps it to one toggle per
+                    // press: Rust owns the default hotkey, the frontend owns rebinds.
+                    if event.state() == ShortcutState::Pressed
+                        && DEFAULT_HOTKEY.parse::<Shortcut>().is_ok_and(|s| s == *shortcut)
+                    {
+                        toggle_capture(app);
                     }
                 })
                 .build(),
