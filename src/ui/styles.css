@@ -1076,11 +1076,22 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
+/* The label never shrinks — a clipped "Thinki…" reads worse than a clipped
+   model id, so all the squeeze goes to the select. */
+.picker > span {
+  flex: none;
+}
+
 .picker select {
   padding: 4px 6px;
   font-size: 12.5px;
   background: var(--panel);
   max-width: 150px;
+  /* A flex item's min-width:auto floor is what made the footer overlap: the
+     wrapper (.picker, min-width: 0) could shrink but the select could not, so
+     its content spilled under the next picker's label (#17). With the floor
+     removed the select shrinks in place and clips its own text natively. */
+  min-width: 0;
 }
 
 /* ── Settings ─────────────────────────────────────────────────────────────── */
