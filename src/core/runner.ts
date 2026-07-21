@@ -22,7 +22,6 @@ export interface ProcSpec {
    */
   stdin?: string;
   cwd?: string;
-  env?: Record<string, string>;
   /** Neither CLI has a built-in timeout — enforcing it is entirely our job. */
   timeoutMs?: number;
 }

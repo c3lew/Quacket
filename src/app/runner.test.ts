@@ -150,14 +150,16 @@ describe('run', () => {
     expect(r.timedOut).toBe(false);
   });
 
-  it('forwards cwd and env, and nulls them when unset', async () => {
+  it('forwards cwd and nulls it when unset', async () => {
     ran();
 
-    await tauriRunner.run({ cmd: 'claude', args: ['-p'], cwd: '/tmp/x', env: { FOO: '1' } });
-    expect(calls[0]?.payload['spec']).toMatchObject({ cwd: '/tmp/x', env: { FOO: '1' } });
+    await tauriRunner.run({ cmd: 'claude', args: ['-p'], cwd: '/tmp/x' });
+    expect(calls[0]?.payload['spec']).toMatchObject({ cwd: '/tmp/x' });
+    expect(calls[0]?.payload['spec']).not.toHaveProperty('env');
 
     await tauriRunner.run({ cmd: 'claude', args: ['-p'] });
-    expect(calls[1]?.payload['spec']).toMatchObject({ cwd: null, env: null });
+    expect(calls[1]?.payload['spec']).toMatchObject({ cwd: null });
+    expect(calls[1]?.payload['spec']).not.toHaveProperty('env');
   });
 
   it('hands the timeout to the side that holds the child', async () => {

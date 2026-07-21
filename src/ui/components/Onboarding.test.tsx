@@ -21,7 +21,7 @@
  */
 
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -131,7 +131,10 @@ async function boot(services: UiServices) {
   return services;
 }
 
-const click = async (name: RegExp | string) => fireEvent.click(await screen.findByRole('button', { name }));
+const click = async (name: RegExp | string) => {
+  const button = await screen.findByRole('button', { name });
+  await act(async () => fireEvent.click(button));
+};
 
 const picker = (label: string) => screen.getByLabelText(label) as HTMLSelectElement;
 

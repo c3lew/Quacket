@@ -98,7 +98,6 @@ pub struct Spec {
     /// `run_blocking`.
     stdin: Option<String>,
     cwd: Option<String>,
-    env: Option<HashMap<String, String>>,
     timeout_ms: Option<u64>,
 }
 
@@ -129,12 +128,6 @@ fn build(program: &str, spec: &Spec) -> Command {
     cmd.args(&spec.args);
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
-    }
-    // `envs` MERGES into the inherited environment, which is the only correct
-    // choice: PATH is how the CLIs are found at all, and their subscription auth
-    // lives in the ambient environment. Clearing it would break every call.
-    if let Some(env) = &spec.env {
-        cmd.envs(env);
     }
     cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
@@ -468,7 +461,6 @@ mod tests {
             args: args.iter().map(|a| (*a).to_string()).collect(),
             stdin: None,
             cwd: None,
-            env: None,
             timeout_ms: None,
         }
     }
@@ -548,20 +540,18 @@ mod tests {
     }
 
     #[test]
-    fn forwards_cwd_and_env() {
+    fn forwards_cwd_and_inherits_env() {
         let dir = std::env::temp_dir().join("quacket-proc-cwd");
         std::fs::create_dir_all(&dir).unwrap();
-        let mut s = spec(&["-e", "process.stdout.write(process.cwd()+'|'+process.env.QUACKET)"]);
+        let mut s = spec(&["-e", "process.stdout.write(process.cwd())"]);
         s.cwd = Some(dir.to_string_lossy().into_owned());
-        s.env = Some(HashMap::from([("QUACKET".to_string(), "1".to_string())]));
 
         let r = node(s);
 
-        assert!(r.stdout.ends_with("|1"), "env was not merged: {r:?}");
         assert!(r.stdout.to_lowercase().contains("quacket-proc-cwd"), "cwd ignored: {r:?}");
-        // Merged, not replaced: losing PATH would mean losing the CLIs entirely.
-        let mut probe = spec(&["-e", "process.stdout.write(process.env.PATH?'has-path':'no-path')"]);
-        probe.env = Some(HashMap::from([("QUACKET".to_string(), "1".to_string())]));
+        // The ambient environment still reaches the child; only renderer-supplied
+        // overrides are forbidden, so PATH and CLI authentication remain intact.
+        let probe = spec(&["-e", "process.stdout.write(process.env.PATH?'has-path':'no-path')"]);
         assert_eq!(node(probe).stdout, "has-path");
     }
 

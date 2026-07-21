@@ -145,15 +145,19 @@ async function boot(services: UiServices) {
 const CAPTURE_BOX = 'What broke? Type it however it comes out.';
 
 const type = async (text: string) => {
-  fireEvent.change(await screen.findByPlaceholderText(CAPTURE_BOX), { target: { value: text } });
+  const input = await screen.findByPlaceholderText(CAPTURE_BOX);
+  await act(async () => fireEvent.change(input, { target: { value: text } }));
 };
 
 const click = async (name: RegExp | string) => {
-  fireEvent.click(await screen.findByRole('button', { name }));
+  const button = await screen.findByRole('button', { name });
+  await act(async () => fireEvent.click(button));
 };
 
 const press = async (key: string, mods: { ctrl?: boolean; shift?: boolean } = {}) => {
-  fireEvent.keyDown(document, { key, ctrlKey: mods.ctrl ?? false, shiftKey: mods.shift ?? false });
+  await act(async () =>
+    fireEvent.keyDown(document, { key, ctrlKey: mods.ctrl ?? false, shiftKey: mods.shift ?? false }),
+  );
 };
 
 /**
@@ -347,7 +351,7 @@ describe('an app killed mid-flight', () => {
       // The screenshot lands while the submit is still in the air.
       await d.drop(['C:\\Users\\user\\shot.png']);
       await waitFor(() => expect(services.attachImage).toHaveBeenCalled());
-      await new Promise((r) => setTimeout(r, 30));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
       // "Killed." The next launch is a real one: a fresh App over the same disk.
       cleanup();
@@ -379,7 +383,7 @@ describe('an app killed mid-flight', () => {
       await waitFor(() => expect(services.submit).toHaveBeenCalled());
       await d.drop(['C:\\Users\\user\\shot.png']);
       await waitFor(() => expect(services.attachImage).toHaveBeenCalled());
-      await new Promise((r) => setTimeout(r, 30));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
       const restored = await store.load();
       expect(restored?.images[0]?.bytes).toEqual(new Uint8Array([1, 2, 3]));

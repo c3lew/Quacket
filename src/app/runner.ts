@@ -53,7 +53,6 @@ const specOf = (spec: ProcSpec, timeoutMs: number | null) => ({
   args: spec.args,
   stdin: spec.stdin ?? null,
   cwd: spec.cwd ?? null,
-  env: spec.env ?? null,
   timeoutMs,
 });
 
