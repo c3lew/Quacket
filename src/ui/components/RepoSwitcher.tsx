@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Repo } from '../../core/types.ts';
 import { fuzzyRepos, highlight } from './fuzzy.ts';
 import { Icon, Spinner } from './icons.tsx';
+import { chordOf } from './keymap.ts';
 
 export interface RepoSwitcherProps {
   repos: Repo[];
@@ -48,24 +49,29 @@ export function RepoSwitcher({
 
   const move = (delta: number) => setCursor((c) => Math.max(0, Math.min(matches.length - 1, c + delta)));
 
+  /*
+   * Ctrl+R opened this modal, so with it open the same chord refreshes the list
+   * instead — the keymap hands a modal its whole keyboard (`overlay ⇒ null`), and
+   * this listens on `document` so the chord works wherever focus sits, with
+   * `preventDefault` keeping the webview's own reload out of it. Exactly Ctrl+R:
+   * an extra modifier is a different chord, same rule as the keymap. Filter query
+   * and cursor are deliberately untouched — a refresh changes the DATA, not where
+   * the user was looking.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const chord = chordOf(event);
+      if (!chord.ctrl || chord.shift || chord.alt || chord.key.toLowerCase() !== 'r') return;
+      event.preventDefault();
+      if (!refreshing) onRefresh();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onRefresh, refreshing]);
+
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      {/*
-       * Ctrl+R opened this modal, so with it open the same chord refreshes the
-       * list instead — the keymap hands a modal its whole keyboard, and this is
-       * caught on the container so it works wherever focus sits. Filter query
-       * and cursor are deliberately untouched: a refresh changes the DATA, not
-       * where the user was looking.
-       */}
-      <div
-        className="switcher"
-        onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'r') {
-            e.preventDefault();
-            if (!refreshing) onRefresh();
-          }
-        }}
-      >
+      <div className="switcher">
         <div className="switcher-search">
           <Icon name="repo" size={14} />
           <input

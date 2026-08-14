@@ -343,29 +343,32 @@ export function App({ services }: AppProps) {
 
   // ── Boot ─────────────────────────────────────────────────────────────────
 
+  /**
+   * The ONE path that calls `listRepos` (#25 pins this). The two callers differ
+   * only in where a failure lands, so the error sink is the parameter: a boot or
+   * recheck load warns in the palette (`setReposError`), while the switcher's
+   * manual refresh reports inside the switcher (`setRefreshError`) and leaves the
+   * previous list standing. Success is shared on purpose — `current ??` keeps the
+   * picked repo even when the refreshed list no longer contains it, because a
+   * repo you were about to file against does not stop being your target just
+   * because the listing moved on. Any successful load also retires a stale
+   * load-failure warning.
+   */
   const loadRepos = useCallback(
-    async (lastRepo: string | null) => {
+    async (lastRepo: string | null, onError: (message: string) => void) => {
       try {
         const list = await services.listRepos();
         setRepos(list);
         setRepo((current) => current ?? list.find((r) => r.nameWithOwner === lastRepo) ?? list[0] ?? null);
         setReposError(null);
       } catch (error) {
-        setReposError(toFailure(error).message);
+        onError(toFailure(error).message);
       }
     },
     [services],
   );
 
-  /**
-   * The switcher's manual refresh (#25). Not `loadRepos`, because failure routes
-   * differently on purpose: a refresh the user just asked for reports INSIDE the
-   * switcher and leaves the previous list standing, while a boot load that failed
-   * has no list to stand on and warns in the palette. Selection survives either
-   * way — `current ??` keeps the picked repo even when the refreshed list no
-   * longer contains it, because a repo you were about to file against does not
-   * stop being your target just because the listing moved on.
-   */
+  /** The switcher's refresh: `loadRepos` plus in-flight bookkeeping (#25). */
   const refreshingRef = useRef(false);
   const refreshRepos = useCallback(async () => {
     // Ref, not state: two fast Ctrl+Rs land before a re-render can disable anything.
@@ -374,21 +377,12 @@ export function App({ services }: AppProps) {
     setReposRefreshing(true);
     setRefreshError(null);
     try {
-      const list = await services.listRepos();
-      setRepos(list);
-      setRepo(
-        (current) =>
-          current ?? list.find((r) => r.nameWithOwner === settingsRef.current.lastRepo) ?? list[0] ?? null,
-      );
-      // A list the user is looking at right now retires a stale boot-load warning.
-      setReposError(null);
-    } catch (error) {
-      setRefreshError(toFailure(error).message);
+      await loadRepos(settingsRef.current.lastRepo, setRefreshError);
     } finally {
       refreshingRef.current = false;
       setReposRefreshing(false);
     }
-  }, [services]);
+  }, [loadRepos]);
 
   /**
    * The one place detection lands, so it is the one place the stored choice gets
@@ -422,7 +416,7 @@ export function App({ services }: AppProps) {
     try {
       const next = await services.detect(true);
       const reconciled = applyDetected(next);
-      if (next.gh.authenticated) void loadRepos(reconciled.lastRepo);
+      if (next.gh.authenticated) void loadRepos(reconciled.lastRepo, setReposError);
     } finally {
       setChecking(false);
     }
@@ -449,7 +443,7 @@ export function App({ services }: AppProps) {
   useEffect(() => {
     void (async () => {
       const reconciled = applyDetected(await services.detect(true));
-      void loadRepos(reconciled.lastRepo);
+      void loadRepos(reconciled.lastRepo, setReposError);
     })();
   }, [applyDetected, loadRepos, services]);
 
@@ -928,7 +922,7 @@ export function App({ services }: AppProps) {
         id: 'repos',
         text: `Your repo list could not be loaded. ${reposError}`,
         actionLabel: 'Try again',
-        onAction: () => void loadRepos(settingsRef.current.lastRepo),
+        onAction: () => void loadRepos(settingsRef.current.lastRepo, setReposError),
       });
     }
 
