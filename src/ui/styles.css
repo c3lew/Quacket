@@ -842,6 +842,24 @@ kbd {
   outline: none;
 }
 
+.switcher-refresh {
+  padding: 4px 8px;
+}
+
+.switcher-error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.switcher-error svg {
+  flex: none;
+}
+
 .switcher-list {
   max-height: 300px;
   overflow: auto;

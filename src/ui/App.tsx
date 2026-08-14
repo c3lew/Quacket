@@ -162,6 +162,9 @@ export function App({ services }: AppProps) {
 
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repo, setRepo] = useState<Repo | null>(null);
+  /** A switcher refresh in flight / failed (#25). Lives here, shows in the switcher. */
+  const [reposRefreshing, setReposRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [issues, setIssues] = useState<OpenIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issuesError, setIssuesError] = useState<string | null>(null);
@@ -353,6 +356,39 @@ export function App({ services }: AppProps) {
     },
     [services],
   );
+
+  /**
+   * The switcher's manual refresh (#25). Not `loadRepos`, because failure routes
+   * differently on purpose: a refresh the user just asked for reports INSIDE the
+   * switcher and leaves the previous list standing, while a boot load that failed
+   * has no list to stand on and warns in the palette. Selection survives either
+   * way — `current ??` keeps the picked repo even when the refreshed list no
+   * longer contains it, because a repo you were about to file against does not
+   * stop being your target just because the listing moved on.
+   */
+  const refreshingRef = useRef(false);
+  const refreshRepos = useCallback(async () => {
+    // Ref, not state: two fast Ctrl+Rs land before a re-render can disable anything.
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setReposRefreshing(true);
+    setRefreshError(null);
+    try {
+      const list = await services.listRepos();
+      setRepos(list);
+      setRepo(
+        (current) =>
+          current ?? list.find((r) => r.nameWithOwner === settingsRef.current.lastRepo) ?? list[0] ?? null,
+      );
+      // A list the user is looking at right now retires a stale boot-load warning.
+      setReposError(null);
+    } catch (error) {
+      setRefreshError(toFailure(error).message);
+    } finally {
+      refreshingRef.current = false;
+      setReposRefreshing(false);
+    }
+  }, [services]);
 
   /**
    * The one place detection lands, so it is the one place the stored choice gets
@@ -719,6 +755,12 @@ export function App({ services }: AppProps) {
 
   // ── Keyboard ─────────────────────────────────────────────────────────────
 
+  const openSwitcher = useCallback(() => {
+    // A failed refresh is news about THAT open; a fresh open starts clean.
+    setRefreshError(null);
+    setPickerOpen(true);
+  }, []);
+
   const similar = useMemo(() => similarCandidates(state), [state]);
 
   useEffect(() => {
@@ -761,7 +803,7 @@ export function App({ services }: AppProps) {
           act(command.action);
           break;
         case 'open-repos':
-          setPickerOpen(true);
+          openSwitcher();
           break;
         case 'close-view':
           setView('capture');
@@ -776,7 +818,7 @@ export function App({ services }: AppProps) {
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [act, applyHotkey, pickerOpen, recording, similar, state, view]);
+  }, [act, applyHotkey, openSwitcher, pickerOpen, recording, similar, state, view]);
 
   // ── Views ────────────────────────────────────────────────────────────────
 
@@ -1228,7 +1270,7 @@ export function App({ services }: AppProps) {
         <Header
           view={view}
           repo={repo}
-          onSwitchRepo={() => setPickerOpen(true)}
+          onSwitchRepo={openSwitcher}
           onOpenIssues={() => void openIssues()}
           onOpenSettings={() => setView('settings')}
           onHide={() => act({ type: 'esc' })}
@@ -1240,7 +1282,15 @@ export function App({ services }: AppProps) {
       </Panel>
 
       {pickerOpen && (
-        <RepoSwitcher repos={repos} current={repo} onPick={pickRepo} onClose={() => setPickerOpen(false)} />
+        <RepoSwitcher
+          repos={repos}
+          current={repo}
+          refreshing={reposRefreshing}
+          refreshError={refreshError}
+          onRefresh={() => void refreshRepos()}
+          onPick={pickRepo}
+          onClose={() => setPickerOpen(false)}
+        />
       )}
     </div>
   );

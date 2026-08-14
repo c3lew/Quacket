@@ -12,7 +12,7 @@
  */
 
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,6 +43,8 @@ afterEach(cleanup);
 beforeAll(() => {
   URL.createObjectURL = vi.fn(() => 'blob:stub');
   URL.revokeObjectURL = vi.fn();
+  // jsdom has no layout, so the switcher's keep-in-view scroll is a stub too.
+  Element.prototype.scrollIntoView = vi.fn();
 });
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -1500,5 +1502,98 @@ describe('an image that has been marked up', () => {
 
     await waitFor(() => expect(screen.queryByRole('button', { name: /Done/ })).toBeNull());
     expect(screen.queryByText(/could not be saved/)).toBeNull();
+  });
+});
+
+// ── #25: refreshing the repo list from the switcher ─────────────────────────
+
+describe('refreshing the repo list without restarting', () => {
+  const NEW_REPO: Repo = { nameWithOwner: 'c3lew/born-after-boot', isPrivate: false };
+  const FILTER_BOX = 'Switch repo — type to filter';
+
+  const openSwitcher = async () => {
+    await press('r', { ctrl: true });
+    return await screen.findByPlaceholderText(FILTER_BOX);
+  };
+
+  it('repopulates the list with what listRepos returns NOW', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos).mockResolvedValue([REPO, NEW_REPO]);
+    await openSwitcher();
+    expect(screen.queryByText(/born-after-boot/)).toBeNull();
+
+    await click(/Refresh/);
+
+    expect(await screen.findByText(/born-after-boot/)).toBeVisible();
+  });
+
+  it('refreshes on Ctrl+R without closing or resetting the filter', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos).mockResolvedValue([REPO, NEW_REPO]);
+    const input = await openSwitcher();
+    await act(async () => fireEvent.change(input, { target: { value: 'born' } }));
+
+    await act(async () => fireEvent.keyDown(input, { key: 'r', ctrlKey: true }));
+
+    // By role: the filter's highlight splits the name across match runs.
+    await screen.findByRole('button', { name: /born-after-boot/ });
+    // Same open, same filter: the refresh changed the data, not where the user was.
+    expect((input as HTMLInputElement).value).toBe('born');
+  });
+
+  it('keeps the selected repo selected even when the refreshed list drops it', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos).mockResolvedValue([NEW_REPO]);
+    const input = await openSwitcher();
+
+    await click(/Refresh/);
+    await screen.findByText(/born-after-boot/);
+    // Esc lands on the switcher's own input — the modal owns its keyboard.
+    await act(async () => fireEvent.keyDown(input, { key: 'Escape' }));
+
+    // The header pill is the one place the target is stated.
+    expect(screen.getByText(REPO.nameWithOwner)).toBeVisible();
+  });
+
+  it('cannot be re-triggered into overlapping requests while in flight', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos).mockClear().mockImplementation(never);
+    const input = await openSwitcher();
+
+    await click(/Refresh/);
+    await act(async () => fireEvent.keyDown(input, { key: 'r', ctrlKey: true }));
+
+    expect(screen.getByRole('button', { name: /Refresh/ })).toBeDisabled();
+    expect(services.listRepos).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a failure inside the switcher and leaves the old list standing', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos).mockRejectedValue(new Error('gh timed out.'));
+    await openSwitcher();
+
+    await click(/Refresh/);
+
+    expect(await screen.findByText(/could not be refreshed/)).toBeVisible();
+    expect(screen.getByText(/gh timed out\./)).toBeVisible();
+    // Not blanked: the list the user already had is still there to pick from.
+    // Scoped to the switcher — the header pill states the same name outside it.
+    const switcher = screen.getByPlaceholderText(FILTER_BOX).closest('.switcher') as HTMLElement;
+    expect(within(switcher).getByText(REPO.nameWithOwner)).toBeVisible();
+  });
+
+  it('lets a failed refresh be retried, and success clears the news', async () => {
+    const services = await boot(fakeServices());
+    vi.mocked(services.listRepos)
+      .mockRejectedValueOnce(new Error('gh timed out.'))
+      .mockResolvedValue([REPO, NEW_REPO]);
+    await openSwitcher();
+    await click(/Refresh/);
+    await screen.findByText(/could not be refreshed/);
+
+    await click(/Refresh/);
+
+    expect(await screen.findByText(/born-after-boot/)).toBeVisible();
+    expect(screen.queryByText(/could not be refreshed/)).toBeNull();
   });
 });

@@ -11,16 +11,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Repo } from '../../core/types.ts';
 import { fuzzyRepos, highlight } from './fuzzy.ts';
-import { Icon } from './icons.tsx';
+import { Icon, Spinner } from './icons.tsx';
 
 export interface RepoSwitcherProps {
   repos: Repo[];
   current: Repo | null;
+  /** A refresh is in flight: the button spins and cannot start another (#25). */
+  refreshing: boolean;
+  /** A refresh that failed. The list on screen is the previous, still-good one. */
+  refreshError: string | null;
+  onRefresh: () => void;
   onPick: (repo: Repo) => void;
   onClose: () => void;
 }
 
-export function RepoSwitcher({ repos, current, onPick, onClose }: RepoSwitcherProps) {
+export function RepoSwitcher({
+  repos,
+  current,
+  refreshing,
+  refreshError,
+  onRefresh,
+  onPick,
+  onClose,
+}: RepoSwitcherProps) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -37,7 +50,22 @@ export function RepoSwitcher({ repos, current, onPick, onClose }: RepoSwitcherPr
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="switcher">
+      {/*
+       * Ctrl+R opened this modal, so with it open the same chord refreshes the
+       * list instead — the keymap hands a modal its whole keyboard, and this is
+       * caught on the container so it works wherever focus sits. Filter query
+       * and cursor are deliberately untouched: a refresh changes the DATA, not
+       * where the user was looking.
+       */}
+      <div
+        className="switcher"
+        onKeyDown={(e) => {
+          if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'r') {
+            e.preventDefault();
+            if (!refreshing) onRefresh();
+          }
+        }}
+      >
         <div className="switcher-search">
           <Icon name="repo" size={14} />
           <input
@@ -66,7 +94,22 @@ export function RepoSwitcher({ repos, current, onPick, onClose }: RepoSwitcherPr
               }
             }}
           />
+          {/* Labelled, not icon-only: "Refresh" says what it does at rest. */}
+          <button className="btn ghost switcher-refresh" onClick={onRefresh} disabled={refreshing}>
+            {refreshing ? <Spinner size={13} /> : <Icon name="refresh" size={13} />}
+            Refresh
+            <kbd>Ctrl+R</kbd>
+          </button>
         </div>
+
+        {/* The failure is news, not a wipe: the previous list stays below, and
+            the Refresh button above is the retry. */}
+        {refreshError !== null && (
+          <p className="switcher-error">
+            <Icon name="warning" size={13} />
+            <span>Your repo list could not be refreshed. {refreshError}</span>
+          </p>
+        )}
 
         <div className="switcher-list" ref={listRef}>
           {matches.length === 0 ? (
