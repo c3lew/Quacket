@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quacket 專案儀表板</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1a202c; --muted: #64748b;
+    --line: #e2e8f0; --accent: #2563eb; --accent-soft: #dbeafe;
+    --ok: #16a34a; --ok-soft: #dcfce7;
+    --warn: #d97706; --warn-soft: #fef3c7;
+    --bad: #dc2626; --bad-soft: #fee2e2;
+    --fog: #94a3b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif; background: var(--bg); color: var(--ink); padding: 32px 24px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+  .b-ok { background: var(--ok-soft); color: var(--ok); }
+  .b-warn { background: var(--warn-soft); color: var(--warn); }
+  .b-bad { background: var(--bad-soft); color: var(--bad); }
+  .b-info { background: var(--accent-soft); color: var(--accent); }
+  .b-fog { background: #e2e8f0; color: var(--fog); }
+  svg.ic { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  .hero { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  .hero .where { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+  .hero .next { display: flex; gap: 10px; align-items: flex-start; background: var(--accent-soft); border-radius: 8px; padding: 12px 16px; color: #1e40af; font-size: 14px; }
+  .hero .next code { font-family: Consolas, monospace; background: rgba(255,255,255,.7); border-radius: 4px; padding: 1px 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .card h2 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .slice-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .slice-row:first-of-type { border-top: none; }
+  .slice-name { flex: 1; }
+  .bar { width: 130px; height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; flex: none; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .bar i.done { background: var(--ok); }
+  .qa-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 14px; text-align: center; }
+  .tile .num { font-size: 26px; font-weight: 800; }
+  .tile .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .list li { list-style: none; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; display: flex; gap: 8px; align-items: flex-start; }
+  .list li:first-child { border-top: none; }
+  .list .when { color: var(--muted); font-size: 12px; white-space: nowrap; margin-top: 2px; }
+  .ask { border-left: 3px solid var(--warn); background: var(--warn-soft); border-radius: 0 8px 8px 0; padding: 10px 14px; font-size: 14px; margin-top: 8px; }
+  .note { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .group { font-size: 12px; color: var(--fog); font-weight: 700; letter-spacing: .04em; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .group + .slice-row { border-top: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Quacket</h1>
+<div class="sub">專案儀表板 · 更新於 8/16 · 你現在裝的是 v0.2.7</div>
+
+<div class="hero">
+  <div class="where">現在在哪:「截圖上傳留收據」做完了,你親手驗過、已經發成 v0.2.7 裝在你電腦上。目前沒有任何必須先修的問題。</div>
+  <div class="next">
+    <svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    <div><strong>下一步:</strong>開始做「重開機後自動確認上一份報告到底送出去沒」— 做完會再請你親手驗收一次。開下一棒:<code>/implement #28</code></div>
+  </div>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <h2><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>功能進度</h2>
+    <div class="slice-row"><span class="slice-name">送出一次就是一次,不會變成兩篇</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">截圖上傳留收據,重試不重傳</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">重開機後自動確認上一份送出去沒</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">上一份的狀態不擋你寫新的,可以「再確認一次」</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">舊版留下的草稿搬過來,不會自己重送</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+    <div class="group">你提過、還沒排進來的</div>
+    <div class="slice-row"><span class="slice-name">更新新版不用重開程式</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">用快捷鍵直接跳到挑 issue 那一區</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+  </div>
+
+  <div class="card">
+    <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2.5 2.5"/></svg>品質現況</h2>
+    <div class="qa-tiles">
+      <div class="tile"><div class="num" style="color:var(--ok)">0</div><div class="lbl">必須先修</div></div>
+      <div class="tile"><div class="num" style="color:var(--warn)">1</div><div class="lbl">小毛病(帶著走)</div></div>
+      <div class="tile"><div class="num" style="color:var(--ok)">739</div><div class="lbl">既有功能全數正常</div></div>
+    </div>
+    <div class="ask"><strong>等你決定:</strong>「更新不用重開程式」和「快捷鍵跳到挑 issue 那區」這兩個你提過的想法 — 要現在插隊做,還是等目前這條線(還有三個功能)做完?我的建議是等做完,這條線每一格都在補「報告不會弄丟、不會變兩篇」,中間插隊會讓半成品多待幾天。</div>
+    <div class="note">
+      <strong>那個小毛病是什麼:</strong>送出成功之後,程式會在背景把本機暫存檔清掉。萬一這步卡住,畫面上完全看不出來,也沒留下足夠線索查原因 — 不影響你的報告,已經送出去的就是送出去了。已排進「重開機後自動確認」那個功能一起處理。<br><br>
+      <strong>你這版(v0.2.7)拿到什麼:</strong>截圖上傳從此有收據。同一份報告送失敗再重試,已經傳上去的圖不會再傳一次,重試變快;傳到一半當掉,傳好的那幾張也還算數。收據綁著「傳去哪個專案、什麼格式、圖片內容本身」,所以你標註過的截圖絕不會被舊版本頂替。上傳出問題時的「不附圖直接送」會續同一份報告送出,不會變成兩篇。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>最近幫你做的決定</h2>
+    <ul class="list">
+      <li><span class="when">8/16</span><span>有一條自動檢查是直接改硬碟上的紀錄來製造情況,不是從畫面操作出來的 — 因為那個情況從畫面根本做不出來。代價:以後存檔格式改了,這條檢查要跟著改。</span></li>
+      <li><span class="when">8/15</span><span>「畫完標註再送」這條不補自動檢查,改由你換裝新版後親手驗一次(已驗過,新內容有帶到)— 比補一套測試快,也更接近你真的會怎麼用。</span></li>
+      <li><span class="when">8/15</span><span>自動檢查沿用現有工具,不多裝一套真瀏覽器測試 — 一個指令幾秒跑完;代價是測的是模擬視窗,不是真的程式視窗。要換隨時換得掉。</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><svg class="ic" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>接下來的驗收點</h2>
+    <ul class="list">
+      <li><span class="when">下一次</span><span>「重開機後自動確認上一份報告」做完並測過之後,我會帶你逐條看一次,你點頭才算過,過了當場發新版給你裝。</span></li>
+      <li><span class="when">再之後</span><span>「上一份的狀態不擋你寫新的」— 同樣流程。</span></li>
+      <li><span class="when">最後</span><span>「舊版留下的草稿搬過來」— 這條做完,這整條線就收工了。</span></li>
+    </ul>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
