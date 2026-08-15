@@ -98,7 +98,11 @@ function fakeServices(state: DetectedState = fresh(), extra: Partial<UiServices>
       candidates: [],
     })),
     followUp: vi.fn(async () => refined()),
-    submit: vi.fn(async () => ({ url: 'https://github.com/c3lew/Quacket/issues/7', issueNumber: 7 })),
+    file: vi.fn(async () => ({
+      url: 'https://github.com/c3lew/Quacket/issues/7',
+      issueNumber: 7,
+      filingId: 'fil_1',
+    })),
     loadDraft: vi.fn(async (): Promise<Draft | null> => null),
     saveDraft: vi.fn(async () => {}),
     attachImage: vi.fn(async () => {}),
@@ -330,7 +334,7 @@ describe('a first run, start to finish', () => {
     await screen.findByDisplayValue(refined().title);
     await click(/Submit issue/);
 
-    await waitFor(() => expect(services.submit).toHaveBeenCalled());
+    await waitFor(() => expect(services.file).toHaveBeenCalled());
     expect(await screen.findByText('Issue #7 filed')).toBeVisible();
   });
 

@@ -39,7 +39,8 @@ import {
   type Recovery,
 } from './../core/ui/reducer.ts';
 import type { Thread } from './../core/llm/index.ts';
-import { hotkeyKeys, settingsNoticeText, toFailure } from './components/format.ts';
+import type { FilingCommand, FilingDecision } from './../core/filing/filing.ts';
+import { filingIdOf, hotkeyKeys, settingsNoticeText, toFailure } from './components/format.ts';
 import { drain, hostReduce, initialHost } from './components/host.ts';
 import { reconcileSettings, type SettingsNotice } from './components/settings.ts';
 import { Icon, Spinner } from './components/icons.tsx';
@@ -51,6 +52,7 @@ import { RepoSwitcher } from './components/RepoSwitcher.tsx';
 import type { UiServices } from './components/services.ts';
 import { SettingsView } from './components/SettingsView.tsx';
 import {
+  filingOwnsDraft,
   NO_REPO,
   pushRecent,
   restoreActions,
@@ -58,7 +60,6 @@ import {
   shouldFoldAnswers,
   shouldSaveDraft,
   toDraft,
-  uploadedFrom,
   type SentEntry,
 } from './components/session.ts';
 import { AnnotateEditor } from './annotate/AnnotateEditor.tsx';
@@ -255,18 +256,29 @@ export function App({ services }: AppProps) {
     [services],
   );
 
-  const runSubmit = useCallback(async () => {
+  /**
+   * One Submit, one Filing.
+   *
+   * The branch at the top is the whole crash-safety story from up here: a report
+   * that already has a Filing is RESUMED, never re-filed. A second `file({kind:
+   * 'new'})` would be a second report — the frozen snapshot, the identity in the
+   * remote body and any receipt already on disk all belong to the first one.
+   */
+  const runSubmit = useCallback(async (withoutImages: boolean) => {
     const current = stateRef.current;
     const target = repoRef.current;
     if (target === null || current.refined === null) {
       act({ type: 'submit-failed', error: { kind: 'create_failed', message: 'Nothing to submit.' } });
       return;
     }
+    const resuming = current.filingId;
 
     // Fold the follow-up answers in. Nothing else consumes them, so skipping this
-    // would ask the user a question and quietly throw the reply away.
+    // would ask the user a question and quietly throw the reply away. A resume
+    // skips it: those answers are already folded into the frozen report, and a
+    // second turn could not reach it anyway.
     let refined = current.refined;
-    if (shouldFoldAnswers(current, pristine.current) && thread.current !== null) {
+    if (resuming === null && shouldFoldAnswers(current, pristine.current) && thread.current !== null) {
       setSubmitPhase('Adding your answers…');
       try {
         refined = await services.followUp(thread.current, current.answers, candidates.current);
@@ -278,9 +290,22 @@ export function App({ services }: AppProps) {
     }
     setSubmitPhase('Sending…');
 
-    const draft: Draft = toDraft({ ...current, refined }, draftId.current, target.nameWithOwner);
+    // The decision is the user's and reads the same either way; only who owns the
+    // report differs. Deciding it once is what keeps [File without images] from
+    // meaning one thing on a resume and nothing at all on a first attempt.
+    const decision: FilingDecision = withoutImages ? 'without-images' : 'as-captured';
+    const command: FilingCommand =
+      resuming === null
+        ? {
+            kind: 'new',
+            draft: toDraft({ ...current, refined }, draftId.current, target.nameWithOwner),
+            repo: target,
+            decision,
+          }
+        : { kind: 'resume', filingId: resuming, decision };
+
     try {
-      const result = await services.submit(draft, target);
+      const result = await services.file(command);
       const entry = sentEntry(result, { ...current, refined }, target.nameWithOwner);
       if (entry !== null) {
         setLastSent(entry);
@@ -298,10 +323,8 @@ export function App({ services }: AppProps) {
       }
       act({ type: 'submit-ok', result });
     } catch (error) {
-      act({ type: 'submit-failed', error: toFailure(error) });
-    } finally {
-      // Whatever DID upload is recorded either way, so a retry reuses the blobs.
-      act({ type: 'images-uploaded', uploaded: uploadedFrom(draft.images) });
+      const filingId = filingIdOf(error);
+      act({ type: 'submit-failed', error: toFailure(error), ...(filingId === undefined ? {} : { filingId }) });
     }
   }, [act, commitSettings, services]);
 
@@ -318,7 +341,7 @@ export function App({ services }: AppProps) {
           await runRefine();
           break;
         case 'submit':
-          await runSubmit();
+          await runSubmit(effect.withoutImages);
           break;
         case 'discard-draft':
           await services.discardDraft();
@@ -500,11 +523,10 @@ export function App({ services }: AppProps) {
 
   /*
    * `shouldSaveDraft` owns the decision, not this effect. The rule it encodes —
-   * hands off while the submit bracket owns draft.json — is invisible from here
-   * and was silently violated: this fired on the transition INTO 'submitting' and
-   * rewrote `inFlight: false` on top of what `beginSubmit` had just written, so a
-   * kill mid-flight restored a normal draft instead of a failed submit with a
-   * Retry.
+   * hands off the moment a Filing owns the report — is invisible from here, and
+   * a version of it was silently violated once already: this fired on the
+   * transition INTO 'submitting' and wrote over what the submit had just
+   * recorded. Keeping the judgment in one pure, tested place is the fix.
    */
   useEffect(() => {
     if (!shouldSaveDraft(state)) return;
@@ -545,6 +567,27 @@ export function App({ services }: AppProps) {
    * same reason: story 29 covers what was PASTED as much as what was typed, and a
    * repo is a submit-time address, not the draft's identity.
    */
+  /**
+   * Image bytes to disk — the ONE write, and the one place that knows when there
+   * is no longer a folder to write to.
+   *
+   * `filingOwnsDraft` is the whole rule, and it lives beside the auto-save's
+   * copy of the same question for a reason: the auto-save was never the only
+   * writer. An image pasted mid-flight goes through the store's attach path,
+   * which has no reason to consult a rule stated in a different caller — that is
+   * how the previous in-flight mark got cleared, twice.
+   *
+   * ponytail: late images stay in the palette but not on disk, until the
+   * capture-state UI (#24 stories 14/15) gives post-Filing content its own Draft.
+   */
+  const persistImage = useCallback(
+    async (draft: Draft, image: ImageAttachment) => {
+      if (filingOwnsDraft(stateRef.current)) return;
+      await services.attachImage(draft, image);
+    },
+    [services],
+  );
+
   const attach = useCallback(
     async (image: NewImage) => {
       // The id is reserved BEFORE the await so two fast pastes cannot both claim
@@ -557,10 +600,10 @@ export function App({ services }: AppProps) {
         annotated: false,
       };
       const draft = toDraft(stateRef.current, draftId.current, repoRef.current?.nameWithOwner ?? NO_REPO);
-      await services.attachImage({ ...draft, images: [...draft.images, attachment] }, attachment);
+      await persistImage({ ...draft, images: [...draft.images, attachment] }, attachment);
       act({ type: 'add-image', image: attachment });
     },
-    [act, services],
+    [act, persistImage],
   );
 
   /**
@@ -669,7 +712,7 @@ export function App({ services }: AppProps) {
 
       const draft = toDraft(current, draftId.current, repoRef.current?.nameWithOwner ?? NO_REPO);
       try {
-        await services.attachImage(draft, flattenedImage(image, bytes));
+        await persistImage(draft, flattenedImage(image, bytes));
       } catch (error) {
         setAnnotateError({ bytes, message: toFailure(error).message });
         return;
@@ -677,7 +720,7 @@ export function App({ services }: AppProps) {
       setAnnotateError(null);
       act({ type: 'annotate-done', bytes });
     },
-    [act, services],
+    [act, persistImage],
   );
 
   /**

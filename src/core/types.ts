@@ -68,11 +68,6 @@ export interface ImageAttachment {
   mediaType: 'image/png' | 'image/jpeg';
   /** True once the user has flattened annotations onto it (v1 is destructive). */
   annotated: boolean;
-  /**
-   * Set once committed to the assets branch. Survives a failed submit so a retry
-   * reuses the blob instead of re-uploading it.
-   */
-  uploadedUrl?: string;
 }
 
 // ── Providers ───────────────────────────────────────────────────────────────

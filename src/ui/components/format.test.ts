@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { FilingError } from '../../core/filing/filing.ts';
 import { GitHubError } from '../../core/github/github.ts';
 import { ProviderError, type ModelInfo } from '../../core/types.ts';
 import {
@@ -9,6 +10,7 @@ import {
   providerLabel,
   reconcileEffort,
   relativeTime,
+  filingIdOf,
   toFailure,
 } from './format.ts';
 
@@ -73,6 +75,20 @@ describe('toFailure', () => {
       message: 'Upload died.',
     });
     expect(toFailure(new GitHubError('create_failed', 'Create died.')).kind).toBe('create_failed');
+  });
+
+  it('carries a Filing failure through as the card, and its id separately', () => {
+    const error = new FilingError('upload_failed', 'Could not upload an image.', 'fil_1');
+
+    // The card the user reads never mentions the Filing…
+    expect(toFailure(error)).toEqual({ kind: 'upload_failed', message: 'Could not upload an image.' });
+    // …but [Try again] needs it, or the retry would file a second report.
+    expect(filingIdOf(error)).toBe('fil_1');
+  });
+
+  it('reports no Filing for a throw that never reached one', () => {
+    expect(filingIdOf(new GitHubError('create_failed', 'x'))).toBeUndefined();
+    expect(filingIdOf(new Error('boom'))).toBeUndefined();
   });
 
   it('degrades an unknown throw to a kind the failure matrix can answer', () => {

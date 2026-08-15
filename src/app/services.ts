@@ -16,6 +16,7 @@ import { load, type Store } from '@tauri-apps/plugin-store';
 import { discover } from '../core/discovery/discovery.ts';
 import { DraftStore } from '../core/drafts/store.ts';
 import { joinPath } from '../core/files.ts';
+import { createFiling, type Filing } from '../core/filing/filing.ts';
 import { createGitHub, type GitHub } from '../core/github/github.ts';
 import { createAdapter, type LlmAdapter } from '../core/llm/index.ts';
 import {
@@ -57,7 +58,9 @@ export interface AutostartService {
 export interface Services {
   settings: SettingsService;
   drafts: DraftStore;
+  /** Reads only. Every GitHub WRITE goes through `filing`. */
   github: GitHub;
+  filing: Filing;
   autostart: AutostartService;
   /** Built per call: provider/model/effort change under the user at any time. */
   adapter(settings: Settings): LlmAdapter;
@@ -118,11 +121,16 @@ export const createServices = async (): Promise<Services> => {
     github.checkAuth(),
   ]);
 
+  const drafts = new DraftStore(dataDir, tauriFiles);
+
   return {
     settings,
     github,
     ghAuth,
-    drafts: new DraftStore(dataDir, tauriFiles),
+    drafts,
+    // Same app data volume as the drafts folder, which is what makes the
+    // draft-to-Filing handoff a rename rather than a copy.
+    filing: createFiling({ runner: tauriRunner, files: tauriFiles, drafts, baseDir: dataDir }),
     autostart: {
       isEnabled,
       set: async (on) => (on ? enable() : disable()),

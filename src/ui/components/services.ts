@@ -8,12 +8,15 @@
  * This sits ON TOP of `src/app/services.ts`, which owns constructing the core
  * modules and the real runner. The split is: that layer answers "what are the
  * core modules, wired to the real machine"; this one answers "what does the
- * palette actually need". The compositions here — refine (prompt + adapter +
- * parse) and submit (store + github) — exist because no core module owns a
- * pipeline that spans two of them, and this is the first place both are in scope.
+ * palette actually need". The one composition left here is refine (prompt +
+ * adapter + parse), because no core module spans those three. Filing used to be
+ * a second one — a submit bracket assembled out of the draft store and github —
+ * and is now a single call, because that pipeline grew a durable receipt and
+ * stopped being something a caller may reassemble.
  */
 
 import type { Services as AppServices } from '../../app/services.ts';
+import type { FilingCommand, FilingReceipt } from '../../core/filing/filing.ts';
 import { parseRefined } from '../../core/refine/parse.ts';
 import { buildSystemPrompt, buildUserPrompt, prefilterCandidates } from '../../core/refine/prompt.ts';
 import { REFINE_SCHEMA } from '../../core/refine/schema.ts';
@@ -29,7 +32,6 @@ import {
   type RefinedDraft,
   type Repo,
   type Settings,
-  type SubmitResult,
 } from '../../core/types.ts';
 import type { DetectedState, GhState } from '../../core/ui/onboarding.ts';
 import { dropInventedIssues } from './session.ts';
@@ -82,8 +84,12 @@ export interface UiServices {
 
   refine(request: RefineRequest): Promise<RefineOutcome>;
   followUp(thread: Thread, answers: string[], candidates: OpenIssue[]): Promise<RefinedDraft>;
-  /** MUTATES `draft.images`, setting `uploadedUrl` on whatever landed. */
-  submit(draft: Draft, repo: Repo): Promise<SubmitResult>;
+  /**
+   * Files a report, or resumes the Filing that already owns one. Resolves only
+   * once the receipt is durable; rejects with a `FilingError` carrying the id to
+   * resume. Everything below it — upload, rendering, cleanup — is Filing's.
+   */
+  file(command: FilingCommand): Promise<FilingReceipt>;
 
   loadDraft(): Promise<Draft | null>;
   saveDraft(draft: Draft): Promise<void>;
@@ -239,27 +245,12 @@ export function createUiServices({ core, platform, runner }: UiServiceDeps): UiS
     },
 
     /**
-     * `beginSubmit`/`finishSubmit` bracket the call so a kill mid-flight restores
-     * as a failed submit rather than a lost draft. The slot frees only on a
-     * confirmed success — that rule lives in the store, not in this caller.
+     * A straight pass-through, and that is the point: there is no ordering left
+     * for this layer to get wrong. The bracket, the cleanup and the slot-freeing
+     * rules all moved inside Filing, which is the only thing that can hold them
+     * together with a durable receipt.
      */
-    async submit(draft, repo): Promise<SubmitResult> {
-      await core.drafts.beginSubmit(draft);
-      try {
-        const result = await core.github.submit(repo, draft, draft.target);
-        await core.drafts.finishSubmit(draft, { ok: true });
-        return result;
-      } catch (error) {
-        await core.drafts.finishSubmit(draft, {
-          ok: false,
-          error: {
-            kind: draftErrorKind(error),
-            message: error instanceof Error ? error.message : 'Submit failed.',
-          },
-        });
-        throw error;
-      }
-    },
+    file: (command) => core.filing.file(command),
 
     loadDraft: () => core.drafts.load(),
     saveDraft: (draft) => core.drafts.save(draft),
@@ -289,20 +280,3 @@ export function createUiServices({ core, platform, runner }: UiServiceDeps): UiS
   };
 }
 
-type DraftErrorKind = NonNullable<Draft['lastError']>['kind'];
-
-const KINDS = new Set<string>([
-  'not_authenticated',
-  'model_unavailable',
-  'rate_limited',
-  'timeout',
-  'provider_error',
-  'upload_failed',
-  'create_failed',
-]);
-
-/** A crash mid-submit cannot know which leg died; create_failed retries correctly for both. */
-const draftErrorKind = (error: unknown): DraftErrorKind => {
-  const kind = (error as { kind?: unknown } | null)?.kind;
-  return typeof kind === 'string' && KINDS.has(kind) ? (kind as DraftErrorKind) : 'create_failed';
-};

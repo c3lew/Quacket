@@ -46,8 +46,11 @@ file. It is the platform primitive's default, not carelessness, so every new
 surface inherits it free. `Picker.tsx` is now the only file allowed to write one
 and `raw-select.guard.test.ts` fails the build on a second (AST-based, so the
 repo's prose about `<select>` does not trip it). Round 5 also fixed the
-first-run card discarding its own effort pick, and made `inFlight` the draft
-store's own bracket instead of a boolean every caller asserted.
+first-run card discarding its own effort pick, and made the in-flight mark the
+draft store's own bracket instead of a boolean every caller asserted. That
+bracket has since been superseded outright by the Filing transaction — see
+[Filing](#filing) — which removes the need for a draft to have an in-flight
+state at all.
 
 **The same "fixed per-file, so it moved" shape was found a third time during
 integration, one layer below the UI**, and is fixed with the two halves joined:
@@ -103,6 +106,48 @@ Two deliberate consequences:
 `@tauri-apps/*`, or any process/filesystem API. Enforced by review and by
 `vite build` — a `node:` import in core fails the build loudly.
 
+## Filing
+
+Submitting is **one transaction**, owned by `core/filing/`, not a pipeline the
+caller assembles. It exists because of one failure a user cannot recover from on
+their own: GitHub accepts the report, Quacket loses the answer, and the app shows
+a Retry that would file it twice.
+
+What `file()` guarantees, in the order it happens:
+
+1. **Identity before any remote write.** A Filing gets a stable, opaque id, and
+   that id goes into the remote body as a hidden HTML comment
+   (`<!-- quacket-filing: … -->`). Nothing visible: no branding, no footer. It is
+   exact text, so a later run can find the report it created rather than guess
+   from a title.
+2. **Ownership by rename.** `DraftStore.handoff` flushes its write queue, writes
+   the final draft.json (the follow-up answers land here or nowhere) and MOVES
+   the whole draft directory into `<appdata>/filings/<id>/draft/`. One rename on
+   one volume: no screenshot is copied, and the report is frozen — later typing
+   and later screenshots cannot reach what is being written.
+3. **Terminal success.** `file` resolves only after the receipt is durable in
+   `<appdata>/filings/<id>/filing.json`. Cleanup runs afterwards, deletes only
+   that one directory, and can never turn a filed report back into a retryable
+   failure — by then success is a fact on disk, not a value in flight.
+
+A pre-terminal failure throws a `FilingError` carrying the id, and the only safe
+way to try again is to RESUME it: `file({kind: 'resume', filingId, decision})`,
+where the decision is the user's own — Retry or File without images. A second
+`{kind: 'new'}` would be a second report.
+
+Consequences worth knowing:
+
+- **A filing workspace is not a draft.** It does not consume the single-draft
+  slot, so several pending cleanups and the active capture surface coexist.
+- **The auto-save stops the moment a Filing owns the report**
+  (`filingOwnsDraft`). Not a nicety: writing under the old draft id after the
+  handoff would recreate a directory whose manifest lists screenshots whose bytes
+  now live elsewhere, which `readDraftDir` calls corruption and throws on.
+- **Asset upload is still per-attempt.** A retry re-uploads. Durable Asset
+  receipts (and crash reconciliation against the hidden identity) are the next
+  tickets under #24; the marker every filing now writes is what makes them
+  possible.
+
 ## Module map
 
 Core is headless and host-agnostic. UI is a renderer over a pure reducer.
@@ -125,17 +170,26 @@ src/core/                     no IO, no DOM — everything injected
                               cached 24h per provider. No hardcoded model list.
                               Only a probe's 404 may hide a model — a probe that
                               merely BROKE degrades to the CLI default, uncached.
-  github/       28 tests      every `gh` call. Orphan assets branch, upload-before-
-                              create, SHA-pinned image rewrite. renderSection is the
-                              one place section markdown is produced, so the
+  github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
+                              the open-issue list. Every `gh` WRITE moved to filing/.
+  filing/       38 tests      the Filing transaction: one verb (`file`) from a final
+                              draft to a durable receipt. Assigns an opaque identity
+                              before the first remote write and carries it in the
+                              body as a hidden HTML comment; takes the draft
+                              directory by an atomic rename; uploads, renders and
+                              creates; and returns only once the receipt is on disk.
+                              Cleanup runs after that and can never turn a filed
+                              report back into a retryable failure. renderSection is
+                              the one place section markdown is produced, so the
                               no-fabrication rule is enforced where it cannot be
                               bypassed: an emptied section is dropped, not headed.
-  drafts/       21 tests      auto-save from the first keystroke; nothing is lost
-                              except by discard or a confirmed submit. `inFlightId`
-                              is the store's OWN bracket, not a flag callers pass:
-                              the single writer derives `inFlight` from it, so no
-                              writer can forget to consult it.
-  ui/           89 tests      reducer.ts (pure stage machine; effects come back as
+  drafts/       15 tests      auto-save from the first keystroke; nothing is lost
+                              except by discard or a confirmed submit. `handoff` is
+                              the one way a draft leaves: it flushes the write queue,
+                              writes the final draft.json, and RENAMES the directory
+                              into a Filing workspace. No copy, and no draft is ever
+                              in two places.
+  ui/           91 tests      reducer.ts (pure stage machine; effects come back as
                               data) + onboarding.ts. `MachineState` (gh + providers)
                               is split from `DetectedState` on purpose: it is exactly
                               the part no palette control can change, so the cards
@@ -252,7 +306,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 693 passed, 27 files
+npx vitest run                    # tests            → 719 passed, 30 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 31 passed
@@ -698,5 +752,26 @@ reproduce the real failure is not evidence.
   candidates actually shown.
 - **Nothing is lost.** Crash, kill, close, and every failed submit keep the draft.
   Only an explicit discard or a confirmed submit success frees the slot.
+- **Filing** — begins once one Draft's final content and target are fixed, then
+  attempts to turn that Draft into a GitHub issue or comment. It may produce
+  reusable Asset receipts before it reaches the terminal Filing receipt.
+- **Filing identity** — the stable identity assigned before GitHub is asked to
+  write. If a crash leaves the outcome ambiguous, Quacket reconciles GitHub by
+  this identity before it can retry the Filing.
+- **Ambiguous Filing** — a Filing whose GitHub outcome cannot yet be reconciled.
+  Filing keeps its final content and assets independently and never blocks the
+  next capture. A matching Filing identity becomes a Filing receipt; an
+  authoritative no-match resumes the same Filing automatically.
+- **Filing success is terminal.** Once GitHub confirms the issue or comment and
+  returns its URL and number, the report is filed. A later local cleanup failure
+  may not make it retryable or permit another filing.
+- **Filing receipt** — durable proof that GitHub accepted an issue or comment:
+  its URL, issue number, and target. Pending receipts form a cleanup queue
+  independent of the active Draft slot: they restore as Done after a crash but
+  never block the next report or permit the filed report to be retried.
+- **Asset receipt** — the durable, SHA-pinned URL for one exact screenshot
+  revision already committed to `quacket-assets`. It is saved as each asset
+  lands; retries reuse it only while repository, media type, and content still
+  match, so annotating the same image id cannot reuse stale bytes.
 - Shared types come from `src/core/types.ts`. If two modules need a shape, it lives
   there — not copied.

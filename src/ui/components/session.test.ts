@@ -17,7 +17,6 @@ import {
   restoreActions,
   sentEntry,
   toDraft,
-  uploadedFrom,
   type SentEntry,
 } from './session.ts';
 
@@ -76,35 +75,16 @@ describe('toDraft', () => {
     expect(draft.lastError).toEqual({ kind: 'create_failed', message: 'Could not create the issue.' });
   });
 
-  it('COPIES images, so github writing uploadedUrl in place cannot mutate React state', () => {
+  it('COPIES images, so nothing downstream can mutate React state through them', () => {
     const original = image('img_1');
     const state = { ...initialState(), images: [original] };
     const draft = toDraft(state, 'd1', 'r');
 
-    // github.uploadImages mutates the array it is handed. That must stop here.
-    (draft.images[0] as ImageAttachment).uploadedUrl = 'https://example.test/a.png';
+    // This object crosses into the store and then into Filing.
+    (draft.images[0] as ImageAttachment).annotated = true;
 
-    expect(original.uploadedUrl).toBeUndefined();
-    expect(state.images[0]?.uploadedUrl).toBeUndefined();
-  });
-});
-
-describe('uploadedFrom', () => {
-  it('reports only the images that actually landed', () => {
-    expect(
-      uploadedFrom([
-        image('img_1', { uploadedUrl: 'https://example.test/1.png' }),
-        image('img_2'),
-        image('img_3', { uploadedUrl: 'https://example.test/3.png' }),
-      ]),
-    ).toEqual([
-      { id: 'img_1', url: 'https://example.test/1.png' },
-      { id: 'img_3', url: 'https://example.test/3.png' },
-    ]);
-  });
-
-  it('reports nothing when an upload died before the first blob', () => {
-    expect(uploadedFrom([image('img_1'), image('img_2')])).toEqual([]);
+    expect(original.annotated).toBe(false);
+    expect(state.images[0]?.annotated).toBe(false);
   });
 });
 
@@ -120,16 +100,6 @@ describe('restoreActions', () => {
   it('restores images in attachment order — the ids the model saw depend on it', () => {
     const state = restore({ ...base, images: [image('img_1'), image('img_2'), image('img_3')] });
     expect(state.images.map((i) => i.id)).toEqual(['img_1', 'img_2', 'img_3']);
-  });
-
-  it('restores an uploadedUrl, so a retry reuses the blob instead of re-uploading', () => {
-    const state = restore({
-      ...base,
-      images: [image('img_1', { uploadedUrl: 'https://example.test/1.png' })],
-      refined: refined(),
-      lastError: { kind: 'create_failed', message: 'Could not create the issue.' },
-    });
-    expect(state.images[0]?.uploadedUrl).toBe('https://example.test/1.png');
   });
 
   it('restores a refined draft to the draft stage', () => {
@@ -185,7 +155,7 @@ describe('restoreActions', () => {
       ...initialState(),
       stage: 'draft',
       raw: 'it broke',
-      images: [image('img_1', { annotated: true, uploadedUrl: 'https://example.test/1.png' })],
+      images: [image('img_1', { annotated: true })],
       refined: refined(),
       answers: ['26100', 'every time'],
       target: { kind: 'comment', issueNumber: 42 },
@@ -392,25 +362,27 @@ describe('shouldSaveDraft', () => {
     expect(shouldSaveDraft({ ...initialState(), images: [image('img_1')] })).toBe(true);
   });
 
-  it('KEEPS ITS HANDS OFF while the submit bracket owns draft.json', () => {
+  it('stops writing the moment a Filing owns the report', () => {
     /*
-     * Reads like the crash-recovery guard, and is NOT — that is the point of this
-     * comment. It was the guard once: the auto-save fired on the transition into
-     * 'submitting' and rewrote inFlight:false over what beginSubmit had written,
-     * so a kill mid-flight restored a NORMAL draft with no Retry.
-     *
-     * Guarding it HERE only ever spoke for the auto-save, and the auto-save was
-     * never the only writer: an image attached mid-flight went through the store
-     * and cleared the mark anyway, because `attachImage` had no reason to consult
-     * a rule that lived in the caller of a different write. The invariant now
-     * lives at the single writer (`DraftStore.write` derives inFlight from its own
-     * bracket), and the tests that prove crash recovery live where it does —
-     * `store.test.ts` and App.test.tsx's 'an app killed mid-flight', both of which
-     * stay green with this clause deleted.
-     *
-     * So this pins churn-avoidance, not correctness. Do not read a green here as
-     * evidence a killed app keeps its Retry; that claim is not this test's to make.
+     * Not a nicety: after the handoff there is no folder to write to. The draft
+     * directory MOVED into the Filing workspace, so a save under the old id
+     * would recreate it with a manifest listing screenshots whose bytes are now
+     * elsewhere — corruption `readDraftDir` throws on, i.e. a bricked next boot.
+     * The report is safe regardless; it is durable in the Filing workspace.
      */
+    expect(shouldSaveDraft({ ...atDraft(), filingId: 'fil_1' })).toBe(false);
+    // Even standing on the error card, where the stage is back to 'draft'.
+    expect(
+      shouldSaveDraft({
+        ...atDraft(),
+        filingId: 'fil_1',
+        failure: { kind: 'create_failed', message: 'gh 502' },
+      }),
+    ).toBe(false);
+  });
+
+  it('keeps its hands off between Submit and the handoff', () => {
+    // The same window, before the Filing has an id to name it by.
     expect(shouldSaveDraft({ ...atDraft(), stage: 'submitting' })).toBe(false);
   });
 
@@ -418,9 +390,9 @@ describe('shouldSaveDraft', () => {
     expect(shouldSaveDraft({ ...atDraft(), stage: 'done' })).toBe(false);
   });
 
-  it('picks back up the moment the submit hands the draft back', () => {
-    // Failure returns the machine to 'draft', and the uploaded URLs that arrive
-    // with it are exactly what a later retry needs on disk.
+  it('picks back up when a submit fails before any Filing started', () => {
+    // No repo, nothing reached Filing: the draft is still the user's, so the
+    // auto-save owns it again.
     expect(
       shouldSaveDraft({ ...atDraft(), failure: { kind: 'create_failed', message: 'gh 502' } }),
     ).toBe(true);

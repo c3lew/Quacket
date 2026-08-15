@@ -46,6 +46,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { discover } from '../../core/discovery/discovery.ts';
 import { DraftStore } from '../../core/drafts/store.ts';
+import { createFiling } from '../../core/filing/filing.ts';
 import { createGitHub } from '../../core/github/github.ts';
 import { createAdapter } from '../../core/llm/index.ts';
 import { FakeRunner } from '../../core/testing/fake-runner.ts';
@@ -112,10 +113,12 @@ const claudeResult = (): string => {
  * which is the repo's one seam. Nothing here stands in for code under test.
  */
 const wire = (runner: FakeRunner): UiServices => {
+  const drafts = new DraftStore(base, nodeFiles);
   const core: AppServices = {
     settings: { get: () => DEFAULT_SETTINGS, set: async () => DEFAULT_SETTINGS },
-    drafts: new DraftStore(base, nodeFiles),
+    drafts,
     github: createGitHub(runner),
+    filing: createFiling({ runner, files: nodeFiles, drafts, baseDir: base }),
     autostart: { isEnabled: async () => false, set: async () => {} },
     adapter: (s) => createAdapter(s.provider, { runner, files: nodeFiles, tempDirBase: base }),
     discover: (provider, force = false) =>

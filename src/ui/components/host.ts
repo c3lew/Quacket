@@ -12,7 +12,7 @@
  * `Next` REPLACES the first, and the first's effects are rendered-over before
  * any of them ran. A real instance of that in v1: a submit failing while the
  * window was hidden dispatched `submit-failed` (effect: notify) and then
- * `images-uploaded` (no effects) in the same async continuation — so the OS
+ * a second, effect-free action in the same async continuation — so the OS
  * notification that is the whole point of story 27 was silently swallowed.
  *
  * The fix is to stop treating effects as a value to be replaced and start

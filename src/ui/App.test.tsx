@@ -18,7 +18,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { DraftStore } from '../core/drafts/store.ts';
+import { DraftStore, readDraftDir } from '../core/drafts/store.ts';
+import { createFiling, type Filing } from '../core/filing/filing.ts';
+import type { ProcessRunner } from '../core/runner.ts';
+import { FakeRunner } from '../core/testing/fake-runner.ts';
 import { nodeFiles } from '../core/testing/node-files.ts';
 import {
   DEFAULT_SETTINGS,
@@ -112,7 +115,11 @@ function fakeServices(extra: Partial<UiServices> = {}) {
       candidates: [],
     })),
     followUp: vi.fn(async () => refined()),
-    submit: vi.fn(async () => ({ url: 'https://github.com/c3lew/Quacket/issues/7', issueNumber: 7 })),
+    file: vi.fn(async () => ({
+      url: 'https://github.com/c3lew/Quacket/issues/7',
+      issueNumber: 7,
+      filingId: 'fil_1',
+    })),
     loadDraft: vi.fn(async (): Promise<Draft | null> => null),
     saveDraft: vi.fn(async () => {}),
     attachImage: vi.fn(async () => {}),
@@ -184,12 +191,12 @@ async function toDraftScreen(services: UiServices) {
 describe('a submit that fails while the window is hidden', () => {
   it('NOTIFIES the user', async () => {
     // The reducer decides to notify; this is the only thing that can prove anyone
-    // was told. `runSubmit` dispatches `images-uploaded` right after
-    // `submit-failed` in the same React batch — which used to render the notify
-    // effect over before it was ever performed, so the notification that is the
-    // entire point of story 27 reached nobody.
+    // was told. A second dispatch landing in the same React batch as
+    // `submit-failed` used to render the notify effect over before it was ever
+    // performed, so the notification that is the entire point of story 27
+    // reached nobody. `host.ts` holds that fix; this proves it end to end.
     const services = fakeServices({
-      submit: vi.fn(async () => {
+      file: vi.fn(async () => {
         throw new Error('Could not create the issue.');
       }),
     });
@@ -208,7 +215,7 @@ describe('a submit that fails while the window is hidden', () => {
     await press('Escape');
     await click(/Submit issue/);
 
-    await waitFor(() => expect(services.submit).toHaveBeenCalled());
+    await waitFor(() => expect(services.file).toHaveBeenCalled());
     expect(services.notify).not.toHaveBeenCalled();
   });
 
@@ -235,7 +242,7 @@ describe('a submit that fails while the window is hidden', () => {
 
   it('stays silent when the window is up — the error card is already on screen', async () => {
     const services = fakeServices({
-      submit: vi.fn(async () => {
+      file: vi.fn(async () => {
         throw new Error('Could not create the issue.');
       }),
     });
@@ -272,123 +279,120 @@ function dropper() {
   };
 }
 
-// ── #15 / story 28: killed mid-flight ──────────────────────────────────────
+// ── Killed mid-flight: the Filing owns the report ──────────────────────────
 
+/**
+ * `gh` for real (through the seam), with `issue create` never answering — the
+ * app is killed while the remote write is in the air.
+ */
+const stalling = (): ProcessRunner => {
+  const fake = new FakeRunner()
+    .on({ cmd: 'gh', argsContain: ['api'] }, { exitCode: 1, stderr: 'gh: Not Found (HTTP 404)' })
+    .on({ cmd: 'gh', argsContain: ['git/trees'] }, { stdout: '{"sha":"tree1"}' })
+    .on({ cmd: 'gh', argsContain: ['git/commits'] }, { stdout: '{"sha":"commit1"}' })
+    .on({ cmd: 'gh', argsContain: ['git/refs'] }, { stdout: '{"ref":"x"}' })
+    .on({ cmd: 'gh', argsContain: ['--method', 'PUT'] }, { stdout: '{"commit":{"sha":"abc"}}' })
+    .on({ cmd: 'gh', argsContain: ['label', 'list'] }, { stdout: '[{"name":"bug"}]' });
+  return {
+    run: (spec) => (spec.args.includes('create') ? never() : fake.run(spec)),
+    session: (spec) => fake.session(spec),
+  };
+};
+
+/** The real App over a real disk, with the real Filing behind Submit. */
+const withFiling = async (
+  run: (ctx: { store: DraftStore; dir: string; filing: Filing }) => Promise<void>,
+) => {
+  const dir = await mkdtemp(join(tmpdir(), 'quacket-app-'));
+  try {
+    const store = new DraftStore(dir, nodeFiles);
+    const filing = createFiling({
+      runner: stalling(),
+      files: nodeFiles,
+      drafts: store,
+      baseDir: dir,
+      newId: () => 'fil_1',
+    });
+    await run({ store, dir, filing });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+const frozen = async (dir: string) =>
+  readDraftDir(nodeFiles, join(dir, 'filings', 'fil_1', 'draft'));
+
+/**
+ * This describe used to prove the opposite arrangement: a kill mid-submit left
+ * the DRAFT on disk marked in-flight, and the next launch restored it with a
+ * Retry — which could file the same report twice, since GitHub may already have
+ * accepted it. The Filing transaction supersedes that. What a kill leaves behind
+ * now is a Filing that owns the report outright, and the guarantees below are the
+ * ones that make recovering it possible at all.
+ */
 describe('an app killed mid-flight', () => {
-  it('leaves the draft on disk marked in-flight, so it restores with a Retry', async () => {
-    await withStore(async (store) => {
-      /*
-       * The real submit bracket, exactly as `components/services.ts` writes it:
-       * beginSubmit marks the draft in-flight, then the pipeline runs. Here it
-       * never returns — the app is killed inside the bracket.
-       */
+  it('leaves the report in the Filing workspace, text and screenshots intact', async () => {
+    await withFiling(async ({ store, dir, filing }) => {
       const services = fakeServices({
         saveDraft: vi.fn((draft: Draft) => store.save(draft)),
-        submit: vi.fn(async (draft: Draft) => {
-          await store.beginSubmit(draft);
-          return never();
-        }),
+        attachImage: vi.fn((draft: Draft, image) => store.attachImage(draft, image).then(() => {})),
+        file: vi.fn((command) => filing.file(command)),
       });
       await toDraftScreen(services);
       await click(/Submit issue/);
-      await waitFor(() => expect(services.submit).toHaveBeenCalled());
+      await waitFor(() => expect(services.file).toHaveBeenCalled());
+      await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
-      // Let every queued auto-save land, then "kill" the app and reload from disk.
-      await new Promise((r) => setTimeout(r, 30));
-      const restored = await store.load();
-
-      expect(restored).not.toBeNull();
-      expect(restored?.lastError?.kind).toBe('create_failed');
-      expect(restored?.lastError?.message).toContain('Retry');
+      // "Killed." Nothing in memory carries over; only what reached the disk.
+      expect((await frozen(dir))?.raw).toBe('tray icon vanished after explorer restart');
+      expect((await frozen(dir))?.refined?.title).toBe(refined().title);
     });
   });
 
-  it('does not lose the report text it was submitting', async () => {
-    await withStore(async (store) => {
+  it('frees the draft slot, so the next report is not blocked by the last one', async () => {
+    await withFiling(async ({ store, dir, filing }) => {
       const services = fakeServices({
         saveDraft: vi.fn((draft: Draft) => store.save(draft)),
-        submit: vi.fn(async (draft: Draft) => {
-          await store.beginSubmit(draft);
-          return never();
-        }),
+        file: vi.fn((command) => filing.file(command)),
       });
       await toDraftScreen(services);
       await click(/Submit issue/);
-      await waitFor(() => expect(services.submit).toHaveBeenCalled());
-      await new Promise((r) => setTimeout(r, 30));
+      await waitFor(() => expect(services.file).toHaveBeenCalled());
+      await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
-      expect((await store.load())?.raw).toBe('tray icon vanished after explorer restart');
+      // The draft directory MOVED. A relaunch finds an empty capture surface,
+      // not a report it might file a second time.
+      expect(await new DraftStore(dir, nodeFiles).load()).toBeNull();
     });
   });
 
   /**
-   * The SECOND writer. `shouldSaveDraft` refusing to write mid-flight was never
-   * the guarantee — it only ever spoke for the auto-save, and the auto-save is
-   * not the only thing that writes draft.json. `attach` goes through the store's
-   * attach path, which wrote `inFlight: false` without ever consulting it, and a
-   * paste listens on the document at EVERY stage: the spinner is up, the user
-   * pastes the screenshot they meant to include, and the mark is gone.
-   *
-   * Which makes this the worst version of story 28 rather than a corner of it:
-   * the draft that loses its Retry is the one the user cared about enough to keep
-   * adding to.
+   * Story 19/20. A screenshot pasted after Submit cannot join a report that may
+   * already be half-written remotely — and, just as importantly, it must not
+   * write itself into the directory the Filing just took, which would leave a
+   * manifest pointing at bytes that live somewhere else.
    */
-  it('keeps the Retry when a screenshot arrives mid-flight', async () => {
-    await withStore(async (store) => {
+  it('keeps a screenshot that arrives after Submit out of the in-flight report', async () => {
+    await withFiling(async ({ store, dir, filing }) => {
       const d = dropper();
       const services = fakeServices({
         onDropFiles: d.onDropFiles,
         readImages: vi.fn(async () => [{ bytes: new Uint8Array([1, 2, 3]), mediaType: 'image/png' as const }]),
         saveDraft: vi.fn((draft: Draft) => store.save(draft)),
         attachImage: vi.fn((draft: Draft, image) => store.attachImage(draft, image).then(() => {})),
-        submit: vi.fn(async (draft: Draft) => {
-          await store.beginSubmit(draft);
-          return never(); // The app is killed inside the bracket.
-        }),
+        file: vi.fn((command) => filing.file(command)),
       });
       await toDraftScreen(services);
       await click(/Submit issue/);
-      await waitFor(() => expect(services.submit).toHaveBeenCalled());
+      await waitFor(() => expect(services.file).toHaveBeenCalled());
 
-      // The screenshot lands while the submit is still in the air.
       await d.drop(['C:\\Users\\user\\shot.png']);
-      await waitFor(() => expect(services.attachImage).toHaveBeenCalled());
       await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
 
-      // "Killed." The next launch is a real one: a fresh App over the same disk.
-      cleanup();
-      await boot(fakeServices({ loadDraft: vi.fn(() => store.load()) }));
-
-      // #15: "restores the draft in a failed-submit state with manual Retry" —
-      // a button the user can press, not a flag a test can read.
-      expect(await screen.findByRole('button', { name: 'Try again' })).toBeVisible();
-      expect(await screen.findByText(/closed while this report was being submitted/)).toBeVisible();
-    });
-  });
-
-  it('still has the screenshot that arrived mid-flight when it restores', async () => {
-    // The mark must not be bought by dropping the write it rode in on.
-    await withStore(async (store) => {
-      const d = dropper();
-      const services = fakeServices({
-        onDropFiles: d.onDropFiles,
-        readImages: vi.fn(async () => [{ bytes: new Uint8Array([1, 2, 3]), mediaType: 'image/png' as const }]),
-        saveDraft: vi.fn((draft: Draft) => store.save(draft)),
-        attachImage: vi.fn((draft: Draft, image) => store.attachImage(draft, image).then(() => {})),
-        submit: vi.fn(async (draft: Draft) => {
-          await store.beginSubmit(draft);
-          return never();
-        }),
-      });
-      await toDraftScreen(services);
-      await click(/Submit issue/);
-      await waitFor(() => expect(services.submit).toHaveBeenCalled());
-      await d.drop(['C:\\Users\\user\\shot.png']);
-      await waitFor(() => expect(services.attachImage).toHaveBeenCalled());
-      await act(async () => void (await new Promise((r) => setTimeout(r, 30))));
-
-      const restored = await store.load();
-      expect(restored?.images[0]?.bytes).toEqual(new Uint8Array([1, 2, 3]));
+      // The frozen report is unchanged…
+      expect((await frozen(dir))?.images).toEqual([]);
+      // …and nothing recreated the draft folder the Filing owns the bytes of.
+      expect(await store.load()).toBeNull();
     });
   });
 });
@@ -566,7 +570,7 @@ describe('a saved draft that cannot be reopened', () => {
     await screen.findByDisplayValue(refined().title);
     await click(/Submit issue/);
 
-    await waitFor(() => expect(services.submit).toHaveBeenCalled());
+    await waitFor(() => expect(services.file).toHaveBeenCalled());
     expect(await screen.findByText('Issue #7 filed')).toBeVisible();
   });
 

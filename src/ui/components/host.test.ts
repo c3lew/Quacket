@@ -27,12 +27,13 @@ const submittingWhileHidden = (): Host =>
 
 describe('the effect queue', () => {
   it('keeps a batch of dispatches from swallowing each other’s effects', () => {
-    // Exactly what runSubmit does on the failure path: dispatch the failure, then
-    // record the uploaded blobs in a `finally`. React commits both as ONE state.
+    // A failure followed by anything else in the same React batch: the second
+    // dispatch must not render the first one's notify effect over before it has
+    // been performed. Story 27 was lost exactly there.
     const host = run(
       [
         { type: 'submit-failed', error: { kind: 'create_failed', message: 'gh exploded' } },
-        { type: 'images-uploaded', uploaded: [] },
+        { type: 'edit-title', title: 'still editable' },
       ],
       submittingWhileHidden(),
     );

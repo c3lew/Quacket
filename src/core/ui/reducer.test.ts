@@ -74,7 +74,7 @@ describe('stage transitions', () => {
 
     const submitting = reduce(drafted.state, { type: 'submit' });
     expect(submitting.state.stage).toBe('submitting');
-    expect(submitting.effects).toEqual([{ type: 'submit' }]);
+    expect(submitting.effects).toEqual([{ type: 'submit', withoutImages: false }]);
 
     const done = reduce(submitting.state, {
       type: 'submit-ok',
@@ -321,19 +321,21 @@ describe('failure matrix', () => {
     expect(next.state.images).toEqual([]);
     expect(next.state.stage).toBe('submitting');
     expect(next.state.failure).toBeNull();
-    expect(next.effects).toEqual([{ type: 'submit' }]);
-    // The mixed draft keeps its sections: dropping images must not touch prose.
+    // The DECISION is what reaches Filing; the cleared thumbnails are cosmetic.
+    expect(next.effects).toEqual([{ type: 'submit', withoutImages: true }]);
+    // The refined draft is never rewritten here: Filing files the frozen report,
+    // so a reducer that edited it would only be lying to the screen.
     expect(next.state.refined).toEqual(failed.refined);
   });
 
   /**
-   * The floor. A draft where EVERY section was image-only would render, refs
-   * stripped, to a title over an empty body — the user's actual words thrown
-   * away. Filing without images then falls back to the raw dump (the user's own
-   * writing, so no fabrication), with file-as-is shape: empty heading, verbatim
-   * body. Title and type survive — they were derived from real input.
+   * The floor — a report whose every section was image-only must file as the raw
+   * dump rather than a title over an empty body — used to be applied HERE, by
+   * rewriting `refined`. It moved into Filing's renderer with the rest of body
+   * rendering, and `filing.test.ts` pins it there. This is the other half of that
+   * move: the reducer must not rewrite a report a Filing already owns.
    */
-  it('falls back to the raw dump when dropping images would empty every section', () => {
+  it('never rewrites the refined draft when dropping images', () => {
     const imageOnly = draft({
       sections: [
         { heading: 'Actual', body: '![screenshot](quacket-image:img_1)' },
@@ -350,13 +352,9 @@ describe('failure matrix', () => {
     );
 
     const next = reduce(failed, { type: 'file-without-images' });
-    expect(next.state.refined?.sections).toEqual([
-      { heading: '', body: 'tray icon vanished after explorer restart' },
-    ]);
-    expect(next.state.refined?.title).toBe(imageOnly.title);
-    expect(next.state.refined?.type).toBe(imageOnly.type);
+    expect(next.state.refined).toEqual(imageOnly);
     expect(next.state.images).toEqual([]);
-    expect(next.effects).toEqual([{ type: 'submit' }]);
+    expect(next.effects).toEqual([{ type: 'submit', withoutImages: true }]);
   });
 
   /** One surviving sentence is enough: the floor must not overwrite real prose. */
@@ -385,7 +383,6 @@ describe('failure matrix', () => {
       [
         { type: 'add-image', image: image('img_1') },
         { type: 'submit' },
-        { type: 'images-uploaded', uploaded: [{ id: 'img_1', url: 'https://cdn/img_1.png' }] },
         { type: 'submit-failed', error: { kind: 'create_failed', message: 'gh issue create failed' } },
       ],
       atDraft(),
@@ -394,45 +391,45 @@ describe('failure matrix', () => {
     expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry']);
   });
 
-  it('retries a failed creation reusing the already-uploaded URLs', () => {
+  /**
+   * Retry means "finish THAT report", not "file another one". The Filing id is
+   * what carries that, and it has to survive the retry — a `submit` that lost it
+   * would start a second Filing against a report GitHub may already have.
+   */
+  it('remembers the Filing a failed submit belongs to, and keeps it across a retry', () => {
     const failed = run(
       [
-        { type: 'add-image', image: image('img_1') },
-        { type: 'add-image', image: image('img_2') },
         { type: 'submit' },
         {
-          type: 'images-uploaded',
-          uploaded: [
-            { id: 'img_1', url: 'https://cdn/img_1.png' },
-            { id: 'img_2', url: 'https://cdn/img_2.png' },
-          ],
+          type: 'submit-failed',
+          error: { kind: 'create_failed', message: 'gh issue create failed' },
+          filingId: 'fil_1',
         },
-        { type: 'submit-failed', error: { kind: 'create_failed', message: 'gh issue create failed' } },
       ],
       atDraft(),
     );
+
+    expect(failed.filingId).toBe('fil_1');
 
     const retry = reduce(failed, { type: 'submit' });
-    expect(retry.effects).toEqual([{ type: 'submit' }]);
-    expect(retry.state.images.map((i) => i.uploadedUrl)).toEqual([
-      'https://cdn/img_1.png',
-      'https://cdn/img_2.png',
-    ]);
+    expect(retry.effects).toEqual([{ type: 'submit', withoutImages: false }]);
+    expect(retry.state.filingId).toBe('fil_1');
   });
 
-  it('keeps un-uploaded images without a URL so a retry uploads only those', () => {
-    const partial = run(
+  it('keeps the known Filing when a later failure carries none', () => {
+    // Nothing reached Filing that time (no repo, a thrown non-FilingError).
+    // Clearing the id would turn the next Retry into a second report.
+    const failed = run(
       [
-        { type: 'add-image', image: image('img_1') },
-        { type: 'add-image', image: image('img_2') },
         { type: 'submit' },
-        { type: 'images-uploaded', uploaded: [{ id: 'img_1', url: 'https://cdn/img_1.png' }] },
-        { type: 'submit-failed', error: { kind: 'upload_failed', message: 'img_2 died' } },
+        { type: 'submit-failed', error: { kind: 'create_failed', message: 'x' }, filingId: 'fil_1' },
+        { type: 'submit' },
+        { type: 'submit-failed', error: { kind: 'provider_error', message: 'Nothing to submit.' } },
       ],
       atDraft(),
     );
 
-    expect(partial.images.map((i) => i.uploadedUrl)).toEqual(['https://cdn/img_1.png', undefined]);
+    expect(failed.filingId).toBe('fil_1');
   });
 });
 
@@ -684,7 +681,6 @@ describe('discard is the only deliberate way to lose work', () => {
       { type: 'choose-similar', issueNumber: 1 },
       { type: 'back-to-input' },
       { type: 'submit' },
-      { type: 'images-uploaded', uploaded: [] },
       { type: 'submit-ok', result: { url: 'u', issueNumber: 1 } },
       { type: 'submit-failed', error: { kind: 'create_failed', message: 'x' } },
       { type: 'file-without-images' },

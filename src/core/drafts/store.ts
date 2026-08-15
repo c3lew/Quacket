@@ -16,40 +16,16 @@ import type { Draft, ImageAttachment } from '../types.ts';
  *
  *   <baseDir>/drafts/<draft.id>/draft.json   metadata + image manifest
  *   <baseDir>/drafts/<draft.id>/<img>.png    image bytes, real files
+ *
+ * The store owns the draft only until a Filing starts. There is deliberately no
+ * submit bracket here any more: an in-flight submit is not a state a draft can
+ * be in, it is a Filing that OWNS the draft's directory outright (`handoff`).
  */
-
-type DraftError = NonNullable<Draft['lastError']>;
-
-/** What a submit resolved to. Only `ok` frees the draft slot. */
-export type SubmitOutcome = { ok: true } | { ok: false; error: DraftError };
 
 /** Bytes live in their own file, so the manifest carries everything but them. */
 type StoredImage = Omit<ImageAttachment, 'bytes'>;
 
-type StoredDraft = Omit<Draft, 'images'> & {
-  /**
-   * A submit was started and never resolved — the mark a killed app leaves
-   * behind, which `read` turns back into a failed-submit state with a Retry.
-   *
-   * It is a fact about the SUBMIT, so no caller is allowed to assert it. `write`
-   * derives it from the store's own bracket instead: `beginSubmit` opens,
-   * `finishSubmit` closes, and every write in between preserves whatever it
-   * found, without being asked to.
-   *
-   * It used to be a parameter every writer passed, documented as "only
-   * `beginSubmit` sets it; any later write clears it" — which quietly assumed the
-   * only later write was `finishSubmit`'s. It was not. `attachImage` passed
-   * `false` too, and an image can arrive mid-flight (the paste listener is on the
-   * document at every stage), so a screenshot pasted during a submit cleared the
-   * mark and the killed app restored a NORMAL draft: no failed-submit state, no
-   * Retry, which is the whole of #15 / story 28. That is the third time this
-   * codebase has been bitten by two producers of one artifact where only one knew
-   * the invariant, so the invariant moved to where a writer cannot fail to
-   * consult it: here.
-   */
-  inFlight: boolean;
-  images: StoredImage[];
-};
+type StoredDraft = Omit<Draft, 'images'> & { images: StoredImage[] };
 
 const DRAFT_JSON = 'draft.json';
 
@@ -58,27 +34,44 @@ const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg' } as const;
 const fileFor = (image: StoredImage): string => `${image.id}.${EXT[image.mediaType]}`;
 
 /**
- * The app died between `beginSubmit` and its outcome, so nothing got to record
- * why. Retry re-runs the whole submit; uploadedUrl round-trips, so whatever did
- * make it to the assets branch is reused rather than uploaded twice.
+ * A manifest entry whose bytes are gone is corruption, not a miss — the draft
+ * exists and claims the image. Throwing beats restoring a report the user
+ * believes still has a screenshot attached.
  */
-const CRASH_ERROR: DraftError = {
-  kind: 'create_failed',
-  message:
-    'Quacket closed while this report was being submitted, so it may not have been filed. Retry to be sure.',
+const imageBytes = async (
+  files: FileStore,
+  dir: string,
+  meta: StoredImage,
+): Promise<Uint8Array> => {
+  const bytes = await files.readBytes(joinPath(dir, fileFor(meta)));
+  if (bytes === null) throw new Error(`draft image ${meta.id} is missing from disk`);
+  return bytes;
 };
+
+/**
+ * Reads one draft directory, wherever it now lives.
+ *
+ * Exported because a draft outlives the drafts folder: `handoff` renames the
+ * whole directory into a Filing workspace, and Filing then reads the frozen
+ * report back out of it with this. The on-disk format has exactly one reader,
+ * which is what keeps the two sides from drifting.
+ */
+export async function readDraftDir(files: FileStore, dir: string): Promise<Draft | null> {
+  const text = await files.readText(joinPath(dir, DRAFT_JSON));
+  if (text === null) return null;
+
+  const { images, ...rest } = JSON.parse(text) as StoredDraft;
+  return {
+    ...rest,
+    images: await Promise.all(
+      images.map(async (meta) => ({ ...meta, bytes: await imageBytes(files, dir, meta) })),
+    ),
+  };
+}
 
 export class DraftStore {
   private readonly root: string;
   private tail: Promise<unknown> = Promise.resolve();
-  /**
-   * The draft whose submit is bracketed and still unresolved, or null.
-   *
-   * An id rather than a bare boolean, so a NEW draft can never inherit the
-   * previous one's mark: `inFlight` is true of one report's submit, not of the
-   * store.
-   */
-  private inFlightId: string | null = null;
 
   constructor(
     baseDir: string,
@@ -117,30 +110,7 @@ export class DraftStore {
     const entries = await this.files.list(this.root);
     const id = entries?.[0];
     if (id === undefined) return null;
-
-    const dir = this.dir(id);
-    const text = await this.files.readText(joinPath(dir, DRAFT_JSON));
-    if (text === null) return null;
-
-    const { inFlight, images, ...rest } = JSON.parse(text) as StoredDraft;
-    const draft: Draft = {
-      ...rest,
-      images: await Promise.all(
-        images.map(async (meta) => ({ ...meta, bytes: await this.imageBytes(dir, meta) })),
-      ),
-    };
-    return inFlight ? { ...draft, lastError: CRASH_ERROR } : draft;
-  }
-
-  /**
-   * A manifest entry whose bytes are gone is corruption, not a miss — the draft
-   * exists and claims the image. Throwing beats restoring a report the user
-   * believes still has a screenshot attached.
-   */
-  private async imageBytes(dir: string, meta: StoredImage): Promise<Uint8Array> {
-    const bytes = await this.files.readBytes(joinPath(dir, fileFor(meta)));
-    if (bytes === null) throw new Error(`draft image ${meta.id} is missing from disk`);
-    return bytes;
+    return readDraftDir(this.files, this.dir(id));
   }
 
   /** The only deliberate way to lose work. */
@@ -179,48 +149,35 @@ export class DraftStore {
   }
 
   /**
-   * Opens the in-flight bracket: a kill anywhere between here and `finishSubmit`
-   * restores as a failed submit with a Retry.
+   * Hands this draft — final text, manifest and every screenshot byte — to a
+   * Filing workspace, atomically, and gives up ownership of it.
    *
-   * The flag is raised INSIDE the serial op, so a save already queued behind this
-   * call still writes the honest `false` — the bracket starts exactly where this
-   * write lands, not where the caller happened to say the word.
+   * This is the freeze. After it returns, the drafts folder is empty and the
+   * report belongs to one Filing: a later keystroke, a pasted screenshot or a
+   * second Submit cannot reach what is being written to GitHub.
+   *
+   * Two properties do the work, and both come from where the call sits rather
+   * than from anything the caller promises:
+   *
+   *   - It runs INSIDE the serial queue, behind every auto-save already in
+   *     flight, and writes the final draft.json itself. So the snapshot handed
+   *     over is complete — never a half-written keystroke, never missing the
+   *     answers folded in at submit time.
+   *   - It MOVES the directory. One rename on one volume: no screenshot is
+   *     copied, no JSON is re-serialised into a second place, and there is no
+   *     window in which both a draft and a Filing claim the same bytes.
+   *
+   * `destDir`'s parent must already exist — Filing creates its own workspace,
+   * because only Filing knows where its workspace is.
    */
-  async beginSubmit(draft: Draft): Promise<void> {
+  async handoff(draft: Draft, destDir: string): Promise<void> {
     await this.serial(async () => {
-      this.inFlightId = draft.id;
       await this.write(draft);
+      await this.files.rename(this.dir(draft.id), destDir);
     });
   }
 
-  /**
-   * The slot-freeing decision lives here rather than at the call site, so a
-   * failed submit structurally cannot drop the draft.
-   */
-  async finishSubmit(draft: Draft, outcome: SubmitOutcome): Promise<void> {
-    /*
-     * Closes the bracket, and closes it for every writer at once — including any
-     * write already queued ahead of ours. That is correct rather than sloppy: by
-     * the time this is CALLED the submit really has resolved, so nothing written
-     * afterwards may still claim otherwise. Hence synchronous, not inside the
-     * serial op.
-     */
-    this.inFlightId = null;
-    if (outcome.ok) {
-      await this.discard();
-      return;
-    }
-    await this.save({ ...draft, lastError: outcome.error });
-  }
-
-  /**
-   * The ONE writer of draft.json, and the only thing that decides `inFlight`.
-   *
-   * It reads the bracket instead of taking the answer from its caller, because a
-   * caller cannot know: `save` and `attachImage` are just as reachable during a
-   * submit as outside one, and both used to hardcode `false` — asserting "the
-   * submit resolved" on no evidence at all.
-   */
+  /** The ONE writer of draft.json. */
   private async write(draft: Draft): Promise<void> {
     const dir = this.dir(draft.id);
     await this.files.mkdirp(dir);
@@ -229,7 +186,6 @@ export class DraftStore {
     const stored: StoredDraft = {
       ...draft,
       images: draft.images.map(({ bytes: _bytes, ...meta }) => meta),
-      inFlight: this.inFlightId === draft.id,
     };
     // Rename is atomic, so a crash mid-save can never leave a torn draft.json —
     // the one thing that would break "nothing is ever lost".

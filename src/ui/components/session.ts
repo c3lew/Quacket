@@ -7,7 +7,6 @@
 
 import type {
   Draft,
-  ImageAttachment,
   OpenIssue,
   RefinedDraft,
   SubmitResult,
@@ -63,9 +62,8 @@ export function dropInventedIssues(draft: RefinedDraft, shown: OpenIssue[]): Ref
 const isSubmitFailure = (state: UiState): boolean => state.stage === 'draft';
 
 /**
- * `images` are COPIED: `github.uploadImages` sets `uploadedUrl` in place, and
- * React state must never be mutated behind the reducer's back. The URLs it lands
- * come back through the `images-uploaded` action instead.
+ * `images` are COPIED: React state must never be mutated behind the reducer's
+ * back, and this object crosses into the store and then into Filing.
  *
  * `repo` is where the draft is GOING, not what it is — pass `NO_REPO` when the
  * user has not chosen one yet. See `shouldSaveDraft`.
@@ -92,28 +90,34 @@ export function toDraft(state: UiState, id: string, repo: string): Draft {
 export const NO_REPO = '';
 
 /**
- * Whether the auto-save should write.
+ * Whether a Filing — rather than the user — owns the report on disk right now.
  *
- * From `submit` until its outcome, `DraftStore` owns the draft's fate: `beginSubmit`
- * opens the in-flight bracket and `finishSubmit` records the outcome, so an
- * auto-save in between has nothing to add and does not write.
+ * This is the one question behind every "don't write" rule in the app, and it
+ * has to be asked in exactly one place, because getting it wrong does not lose a
+ * write: it CORRUPTS one. A started Filing MOVED the draft directory — bytes and
+ * all — into its own workspace. Any write under the old draft id after that
+ * recreates a directory whose manifest lists screenshots whose bytes now live
+ * somewhere else, which `readDraftDir` correctly calls corruption and throws on.
+ * That throw is a bricked next boot.
  *
- * That clause is NOT what keeps the in-flight mark alive, and must never be read
- * as such — it used to be, and that is precisely how the mark got cleared anyway.
- * Stating an invariant about draft.json in a caller that merely CHOOSES not to
- * write protects nothing from the writers that choose to: an image attached
- * mid-flight (paste listens on the document at every stage) went through the
- * store's attach path, which never consults this, and wrote `inFlight: false`
- * straight over it. The rule now lives at the single writer — `DraftStore.write`
- * derives `inFlight` from its own bracket — where a writer cannot fail to consult
- * it. Deleting this line would cost churn, not correctness.
+ * Two answers, because the ownership starts before the Filing has a name:
+ *   - 'submitting' is the window between Submit and the handoff completing.
+ *   - `filingId` is every moment after a Filing identified itself, including the
+ *     error card, where the stage is back to 'draft' but the report is not.
  *
- * 'done' is excluded for a reason of its own, and this one IS load-bearing here
- * because the store cannot see it: a confirmed success already
- * discarded the draft, and re-saving would resurrect the folder the submit just
- * earned the right to delete.
+ * 'done' is here on its own account: a confirmed success has already been
+ * cleaned up, and a write would resurrect the folder the submit just earned the
+ * right to delete.
  *
- * So: the auto-save owns the file exactly while the USER owns the draft.
+ * Nothing is at risk while this is true. The report is durable in the Filing
+ * workspace — that is the whole point of the handoff.
+ */
+export const filingOwnsDraft = (state: UiState): boolean =>
+  state.filingId !== null || state.stage === 'submitting' || state.stage === 'done';
+
+/**
+ * Whether the auto-save should write. The auto-save owns draft.json exactly
+ * while the USER owns the draft — see `filingOwnsDraft` for the other half.
  *
  * The repo is deliberately NOT part of this question, and used to be — a null one
  * skipped the save entirely. But a draft is the user's words; the repo is only
@@ -127,15 +131,9 @@ export const NO_REPO = '';
  * live precisely so the work is not lost.
  */
 export const shouldSaveDraft = (state: UiState): boolean => {
-  if (state.stage === 'submitting' || state.stage === 'done') return false;
+  if (filingOwnsDraft(state)) return false;
   return state.raw !== '' || state.images.length > 0;
 };
-
-/** The URLs an upload actually landed, for `images-uploaded`. */
-export const uploadedFrom = (images: ImageAttachment[]): Array<{ id: string; url: string }> =>
-  images.flatMap((image) =>
-    image.uploadedUrl === undefined ? [] : [{ id: image.id, url: image.uploadedUrl }],
-  );
 
 // ── Draft → UiState ─────────────────────────────────────────────────────────
 

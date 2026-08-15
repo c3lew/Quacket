@@ -3,6 +3,7 @@
  * ternaries in JSX that no test ever reaches.
  */
 
+import { FilingError } from '../../core/filing/filing.ts';
 import { GitHubError } from '../../core/github/github.ts';
 import { ProviderError, type ModelInfo, type ProviderId } from '../../core/types.ts';
 import type { Failure } from '../../core/ui/reducer.ts';
@@ -44,12 +45,24 @@ export function relativeTime(iso: string, now: number): string {
  */
 export function toFailure(error: unknown): Failure {
   if (error instanceof ProviderError) return { kind: error.kind, message: error.message };
+  if (error instanceof FilingError) return { kind: error.kind, message: error.message };
   if (error instanceof GitHubError) return { kind: error.kind, message: error.message };
   return {
     kind: 'provider_error',
     message: error instanceof Error ? error.message : 'Something went wrong.',
   };
 }
+
+/**
+ * Which Filing a failed submit belongs to, if any.
+ *
+ * Separate from `toFailure` because they answer different questions and only one
+ * of them is shown to anybody: the Failure is the card the user READS, this is
+ * what [Try again] ACTS on. A failure that carries no Filing id (nothing reached
+ * Filing at all) leaves the current one standing rather than clearing it.
+ */
+export const filingIdOf = (error: unknown): string | undefined =>
+  error instanceof FilingError ? error.filingId : undefined;
 
 const PROVIDER_LABELS: Record<ProviderId, string> = { claude: 'Claude Code', codex: 'Codex' };
 

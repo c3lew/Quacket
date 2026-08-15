@@ -9,7 +9,6 @@
  */
 
 import { TITLE_MAX_CHARS } from '../refine/schema.ts';
-import { imageRefPattern } from '../types.ts';
 import type {
   Draft,
   ImageAttachment,
@@ -68,6 +67,15 @@ export interface UiState {
   editing: Editing | null;
   failure: Failure | null;
   result: SubmitResult | null;
+  /**
+   * The Filing that owns this report, once one has started.
+   *
+   * Set the moment a submit fails pre-terminally, and it changes what every
+   * later action MEANS: [Try again] resumes that Filing rather than starting a
+   * second one, and the auto-save stops writing because the report on disk now
+   * belongs to Filing, not to the draft slot (`shouldSaveDraft`).
+   */
+  filingId: string | null;
 }
 
 export const initialState = (): UiState => ({
@@ -82,6 +90,7 @@ export const initialState = (): UiState => ({
   editing: null,
   failure: null,
   result: null,
+  filingId: null,
 });
 
 // ── Actions & effects ───────────────────────────────────────────────────────
@@ -106,16 +115,17 @@ export type Action =
   | { type: 'choose-similar'; issueNumber: number }
   | { type: 'back-to-input' }
   | { type: 'submit' }
-  | { type: 'images-uploaded'; uploaded: Array<{ id: string; url: string }> }
   | { type: 'submit-ok'; result: SubmitResult }
-  | { type: 'submit-failed'; error: Failure }
+  /** `filingId` is present whenever the failure came from a started Filing. */
+  | { type: 'submit-failed'; error: Failure; filingId?: string }
   | { type: 'file-without-images' }
   | { type: 'discard' }
   | { type: 'new-report' };
 
 export type Effect =
   | { type: 'refine' }
-  | { type: 'submit' }
+  /** `withoutImages` is the user's [File without images] decision, carried through. */
+  | { type: 'submit'; withoutImages: boolean }
   | { type: 'notify'; message: string }
   | { type: 'hide' }
   /** Deletes the draft folder. The ONLY thing in the app that may. */
@@ -402,70 +412,56 @@ export function reduce(state: UiState, action: Action): Next {
 
     // ── Submit ──────────────────────────────────────────────────────────────
 
-    /** Also the [Retry] action: uploaded URLs already live on the images. */
+    /** Also the [Retry] action, which resumes the SAME Filing — see `filingId`. */
     case 'submit':
       return state.stage !== 'draft'
         ? only(state)
         : {
             state: { ...state, stage: 'submitting', failure: null },
-            effects: [{ type: 'submit' }],
+            effects: [{ type: 'submit', withoutImages: false }],
           };
-
-    /** Recorded mid-flight so a later [Retry] reuses the blobs instead of re-uploading. */
-    case 'images-uploaded': {
-      const urls = new Map(action.uploaded.map((u) => [u.id, u.url]));
-      return only({
-        ...state,
-        images: state.images.map((img) => {
-          const url = urls.get(img.id);
-          return url === undefined ? img : { ...img, uploadedUrl: url };
-        }),
-      });
-    }
 
     /** The done screen IS the confirmation. Silent even when hidden. */
     case 'submit-ok':
       return only({ ...state, stage: 'done', result: action.result, failure: null });
 
-    /** The error card. The next summon lands here whether or not we notified. */
+    /**
+     * The error card. The next summon lands here whether or not we notified.
+     *
+     * A `filingId` on the way in is remembered rather than merged into the
+     * failure: the failure is what the user READS, the Filing id is what [Try
+     * again] ACTS on, and only the second one must survive an edit to the card.
+     */
     case 'submit-failed':
-      return withNotice({ ...state, stage: 'draft', failure: action.error }, action.error);
+      return withNotice(
+        {
+          ...state,
+          stage: 'draft',
+          failure: action.error,
+          filingId: action.filingId ?? state.filingId,
+        },
+        action.error,
+      );
 
     /**
-     * Dropping the images can drop the whole report: a section whose only
-     * content was an image ref renders to nothing (github.ts judges emptiness
-     * AFTER stripping), so a draft where EVERY section was image-only would file
-     * as a title over an empty body — the user's actual words thrown away.
+     * The user's decision, carried to Filing rather than acted on here.
      *
-     * The floor is the raw dump. It is the user's own writing, so putting it in
-     * the body cannot violate the no-fabrication rule — that rule forbids
-     * INVENTING, not shipping unpolished — and it is the same escape-hatch
-     * semantics file-as-is already has (empty heading, verbatim body). The
-     * refined title and type survive: they were derived from real input and the
-     * user has already seen and could edit them.
+     * The images are cleared so the palette stops showing thumbnails for
+     * screenshots that will not be filed, but that state change is cosmetic:
+     * Filing files the FROZEN report it already owns, so what actually keeps the
+     * screenshots out of the body is `withoutImages` reaching it — not this.
      *
-     * Decided here and not in renderBody because the renderer dropping empty
-     * sections is CORRECT — this is a product floor, and floors belong in the
-     * reducer (it is also the only place that still knows `raw`).
+     * The floor under a report whose every section was image-only (fall back to
+     * the raw dump rather than file a title over an empty body) used to live
+     * here too, and moved into Filing's renderer with the rest of body
+     * rendering: it is a property of the filed body, and this reducer no longer
+     * owns the report once a Filing has started.
      */
-    case 'file-without-images': {
-      const refined = state.refined;
-      const allImageOnly =
-        refined !== null &&
-        refined.sections.every((s) => s.body.replace(imageRefPattern(), '').trim() === '');
+    case 'file-without-images':
       return {
-        state: {
-          ...state,
-          images: [],
-          stage: 'submitting',
-          failure: null,
-          ...(allImageOnly
-            ? { refined: { ...refined, sections: [{ heading: '', body: state.raw.trim() }] } }
-            : {}),
-        },
-        effects: [{ type: 'submit' }],
+        state: { ...state, images: [], stage: 'submitting', failure: null },
+        effects: [{ type: 'submit', withoutImages: true }],
       };
-    }
 
     /**
      * The ONLY deliberate way to lose work, and the only thing in the machine
