@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { DraftStore, readDraftDir } from '../core/drafts/store.ts';
+import type { FileStore } from '../core/files.ts';
 import { createFiling, type Filing } from '../core/filing/filing.ts';
 import type { ProcessRunner } from '../core/runner.ts';
 import { FakeRunner } from '../core/testing/fake-runner.ts';
@@ -281,34 +282,46 @@ function dropper() {
 
 // ── Killed mid-flight: the Filing owns the report ──────────────────────────
 
-/**
- * `gh` for real (through the seam), with `issue create` never answering — the
- * app is killed while the remote write is in the air.
- */
-const stalling = (): ProcessRunner => {
-  const fake = new FakeRunner()
+/** Every `gh` spawn a submit makes, answered — including the write that lands. */
+const ghScript = (): FakeRunner =>
+  new FakeRunner()
     .on({ cmd: 'gh', argsContain: ['api'] }, { exitCode: 1, stderr: 'gh: Not Found (HTTP 404)' })
     .on({ cmd: 'gh', argsContain: ['git/trees'] }, { stdout: '{"sha":"tree1"}' })
     .on({ cmd: 'gh', argsContain: ['git/commits'] }, { stdout: '{"sha":"commit1"}' })
     .on({ cmd: 'gh', argsContain: ['git/refs'] }, { stdout: '{"ref":"x"}' })
     .on({ cmd: 'gh', argsContain: ['--method', 'PUT'] }, { stdout: '{"commit":{"sha":"abc"}}' })
-    .on({ cmd: 'gh', argsContain: ['label', 'list'] }, { stdout: '[{"name":"bug"}]' });
+    .on({ cmd: 'gh', argsContain: ['label', 'list'] }, { stdout: '[{"name":"bug"}]' })
+    .on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { stdout: 'https://github.com/c3lew/Quacket/issues/42\n' },
+    );
+
+/**
+ * `gh` for real (through the seam), with `issue create` never answering — the
+ * app is killed while the remote write is in the air.
+ */
+const stalling = (): ProcessRunner => {
+  const fake = ghScript();
   return {
     run: (spec) => (spec.args.includes('create') ? never() : fake.run(spec)),
     session: (spec) => fake.session(spec),
   };
 };
 
+const createCalls = (runner: FakeRunner) => runner.calls.filter((c) => c.args.includes('create'));
+
 /** The real App over a real disk, with the real Filing behind Submit. */
 const withFiling = async (
   run: (ctx: { store: DraftStore; dir: string; filing: Filing }) => Promise<void>,
+  options: { runner?: ProcessRunner; files?: FileStore } = {},
 ) => {
   const dir = await mkdtemp(join(tmpdir(), 'quacket-app-'));
   try {
-    const store = new DraftStore(dir, nodeFiles);
+    const files = options.files ?? nodeFiles;
+    const store = new DraftStore(dir, files);
     const filing = createFiling({
-      runner: stalling(),
-      files: nodeFiles,
+      runner: options.runner ?? stalling(),
+      files,
       drafts: store,
       baseDir: dir,
       newId: () => 'fil_1',
@@ -394,6 +407,120 @@ describe('an app killed mid-flight', () => {
       // …and nothing recreated the draft folder the Filing owns the bytes of.
       expect(await store.load()).toBeNull();
     });
+  });
+});
+
+// ── QA #26: what the user SEES when the bookkeeping fails ──────────────────
+
+/**
+ * The module proves `file` resolves with the receipt when a post-acceptance
+ * write fails. That is not the same claim as "the user is not handed a button
+ * that files their report twice" — the palette is what decides that, and QA #31
+ * found the gap by driving the palette, not the module.
+ *
+ * So these run the real App over a real disk with the real Filing behind Submit,
+ * and assert only what is on screen and what `gh` was actually asked to do.
+ */
+describe('a submit whose local bookkeeping fails after GitHub accepted it', () => {
+  const submitting = async (services: UiServices) => {
+    await toDraftScreen(services);
+    await click(/Submit issue/);
+  };
+
+  const wired = (store: DraftStore, filing: Filing) =>
+    fakeServices({
+      saveDraft: vi.fn((draft: Draft) => store.save(draft)),
+      attachImage: vi.fn((draft: Draft, image) => store.attachImage(draft, image).then(() => {})),
+      file: vi.fn((command) => filing.file(command)),
+    });
+
+  /** QA #31: GitHub accepted the report, and only the write recording it failed. */
+  it('lands on Done, with no Try again that would file the report a second time', async () => {
+    const runner = ghScript();
+    const files: FileStore = {
+      ...nodeFiles,
+      writeText: async (path, text) => {
+        if (text.includes('"state":"filed"')) throw new Error('injected: disk full');
+        return nodeFiles.writeText(path, text);
+      },
+    };
+    await withFiling(
+      async ({ store, filing }) => {
+        await submitting(wired(store, filing));
+
+        expect(await screen.findByText('Issue #42 filed')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+        // The one that matters: one Submit, one issue on GitHub.
+        expect(createCalls(runner)).toHaveLength(1);
+      },
+      { runner, files },
+    );
+  });
+
+  it('lands on Done when the local cleanup is the thing that fails', async () => {
+    const runner = ghScript();
+    const files: FileStore = {
+      ...nodeFiles,
+      remove: async (path) => {
+        if (path.includes('filings')) throw new Error('injected: directory locked');
+        return nodeFiles.remove(path);
+      },
+    };
+    await withFiling(
+      async ({ store, filing }) => {
+        await submitting(wired(store, filing));
+
+        expect(await screen.findByText('Issue #42 filed')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+        expect(createCalls(runner)).toHaveLength(1);
+      },
+      { runner, files },
+    );
+  });
+
+  /**
+   * Story 19/37. The palette stays up and still takes keystrokes while the write
+   * is in the air; what those keystrokes must NOT do is change a report that is
+   * already being written. The screenshot half of this lives above.
+   */
+  it('files what was on screen at Submit, not what is typed during Sending…', async () => {
+    const fake = ghScript();
+    let release = () => {};
+    const open = new Promise<void>((resolve) => (release = () => resolve()));
+    // The remote write is held open, so the test owns the in-flight window
+    // instead of racing it.
+    const runner: ProcessRunner = {
+      run: async (spec) => {
+        if (spec.args.includes('create')) await open;
+        return fake.run(spec);
+      },
+      session: (spec) => fake.session(spec),
+    };
+
+    await withFiling(
+      async ({ store, filing }) => {
+        const services = wired(store, filing);
+        await submitting(services);
+        await waitFor(() => expect(services.file).toHaveBeenCalled());
+
+        expect(await screen.findByText('Sending…')).toBeInTheDocument();
+        const title = await screen.findByDisplayValue(refined().title);
+        await act(async () =>
+          fireEvent.change(title, { target: { value: 'typed while it was sending' } }),
+        );
+
+        await act(async () => release());
+        expect(await screen.findByText('Issue #42 filed')).toBeInTheDocument();
+
+        const create = createCalls(fake)[0];
+        expect(create?.args).toContain(refined().title);
+        expect(create?.stdin).not.toContain('typed while it was sending');
+        // Nor did those keystrokes write a draft back into the slot the Filing
+        // emptied — which the next boot would restore as a report already filed.
+        expect(await store.load()).toBeNull();
+      },
+      { runner },
+    );
   });
 });
 
