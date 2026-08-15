@@ -25,10 +25,14 @@
  *   2. OWNERSHIP. The draft directory is MOVED into the Filing workspace by one
  *      rename. The report is frozen at that instant: later typing and later
  *      screenshots cannot change what is already being written.
- *   3. TERMINAL SUCCESS. `file` resolves only after the receipt is durable on
- *      disk. Local cleanup runs afterwards and can fail as loudly as it likes —
- *      it can never turn a filed report back into a retryable failure, because
- *      by then success is a fact on disk rather than a value in flight.
+ *   3. TERMINAL SUCCESS. The instant GitHub accepts the report, the submit is
+ *      over. Everything after that — writing the receipt, deleting the workspace
+ *      — is bookkeeping, and NO bookkeeping failure can turn a filed report back
+ *      into a retryable one. A retry after acceptance is a second issue, so a
+ *      local disk problem reported as "filing failed" would hand the user a
+ *      button that duplicates their report. The receipt is written durably so a
+ *      later process can still see the outcome; when that write fails we have
+ *      lost the memory, not the fact, and the fact is what the caller is told.
  *
  * Layout, one folder per Filing:
  *
@@ -211,8 +215,26 @@ const randomFilingId = (): string => {
 const kindOf = (error: unknown): GitHubErrorKind =>
   error instanceof GitHubError ? error.kind : 'create_failed';
 
+/**
+ * The last stop before an error leaves the module.
+ *
+ * A `FilingError` passes through untouched — it was raised on purpose, with a
+ * message written for the user. Anything else is a surprise, and its message is
+ * dropped rather than shown: a surprise here is a filesystem or runtime error
+ * whose text (`EBUSY`, `ENOSPC`) tells the user nothing they can act on and
+ * reads like a crash.
+ */
+const asFilingError =
+  (filingId: string) =>
+  (error: unknown): never => {
+    if (error instanceof FilingError) throw error;
+    throw new FilingError('create_failed', UNKNOWN_FAILURE, filingId);
+  };
+
+const UNKNOWN_FAILURE = 'Could not file this report.';
+
 const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : 'Could not file this report.';
+  error instanceof Error ? error.message : UNKNOWN_FAILURE;
 
 // ── The module ──────────────────────────────────────────────────────────────
 
@@ -233,6 +255,23 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
   const newId = options.newId ?? randomFilingId;
   const gh = createGh(runner);
 
+  /**
+   * Receipts this process earned, whether or not they reached the disk.
+   *
+   * The snapshot is how a receipt survives a RESTART. This is how it survives a
+   * broken disk, and the two are not the same failure: the write that records
+   * acceptance can fail, and so can the cleanup that would have removed the
+   * stale snapshot behind it — one full disk, one locked directory, both at
+   * once. What is left on disk then says `filing` with no receipt, and resuming
+   * it would file the report a second time.
+   *
+   * So the fact lives here too. As long as the process that filed the report is
+   * still running, no resume of that identity can reach GitHub again — without
+   * asking GitHub anything, which is reconciliation's job (#24) and is what
+   * covers the case where the process is NOT still running.
+   */
+  const earned = new Map<string, FilingReceipt>();
+
   const root = joinPath(baseDir, 'filings');
   const dirFor = (id: string): string => joinPath(root, id);
   const draftDir = (id: string): string => joinPath(dirFor(id), DRAFT_SUBDIR);
@@ -250,6 +289,28 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
     const tmp = `${file}.tmp`;
     await files.writeText(tmp, JSON.stringify(snapshot));
     await files.rename(tmp, file);
+  };
+
+  /**
+   * A snapshot write that cannot change the outcome.
+   *
+   * Used everywhere the write is a RECORD of something already decided — the
+   * receipt for a report GitHub accepted, the failure that is about to be thrown
+   * anyway, the cleanup that did not finish. In all three the decision is
+   * already made, so letting the write throw could only replace a true outcome
+   * with a false one: a filed report reported as failed, or a GitHub failure
+   * replaced by a filesystem one the user can do nothing about.
+   *
+   * `persist` itself still throws, and `begin` still uses it: there, the write
+   * IS the decision — nothing has reached GitHub, so a Filing whose own record
+   * failed must not proceed.
+   */
+  const record = async (snapshot: Snapshot): Promise<void> => {
+    try {
+      await persist(snapshot);
+    } catch {
+      // Nowhere left to write it down. The outcome stands regardless.
+    }
   };
 
   const loadSnapshot = async (id: string): Promise<Snapshot> => {
@@ -544,9 +605,14 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
    */
   const attempt = async (snapshot: Snapshot, decision: FilingDecision): Promise<FiledSnapshot> => {
     // Already terminal: a resumed Filing that got its receipt never asks GitHub
-    // to create anything a second time.
-    const done = snapshot.receipt;
-    if (done !== undefined) return { ...snapshot, receipt: done };
+    // to create anything a second time. The snapshot is the durable answer;
+    // `earned` covers the one case it cannot — a receipt this process holds that
+    // never made it to disk (see the map's own note).
+    const done = snapshot.receipt ?? earned.get(snapshot.id);
+    // `state` is set alongside the receipt, never left as the loaded one: a
+    // snapshot carrying a receipt while still calling itself `filing` would be a
+    // record that contradicts itself, and cleanup writes this back to disk.
+    if (done !== undefined) return { ...snapshot, state: 'filed', receipt: done };
 
     const frozen = await readDraftDir(files, draftDir(snapshot.id));
     const refined = frozen?.refined;
@@ -567,7 +633,7 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       const body = withMarker(renderBody(refined, frozen.raw, urls, repo.isPrivate), snapshot.id);
       result = await create(repo, snapshot.target, refined, body);
     } catch (error) {
-      await persist({
+      await record({
         ...snapshot,
         state: 'failed',
         updatedAt: stamp(),
@@ -584,8 +650,23 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       updatedAt: stamp(),
       receipt: { ...result, filingId: snapshot.id },
     };
-    // THE line. Everything before it is retryable; nothing after it is.
-    await persist(filed);
+    earned.set(snapshot.id, filed.receipt);
+    /*
+     * THE line was the `create` above, not this one. This write is how the
+     * receipt outlives the process; it is not what makes the report filed.
+     *
+     * So it is a `record`: if the disk is full, locked, or gone, the report is
+     * still on GitHub and the caller still gets the receipt it just earned.
+     * Throwing here would report a filed report as failed and offer a [Try
+     * again] that files it a second time — the one failure the whole module
+     * exists to prevent.
+     *
+     * ponytail: what is lost is the memory across a restart — a snapshot left
+     * saying `filing` with no receipt. Nothing resumes a Filing on its own
+     * today, so it is inert; asking GitHub whether this identity is already
+     * there is reconciliation's job (#24), and it reads the same marker.
+     */
+    await record(filed);
     return filed;
   };
 
@@ -605,31 +686,35 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
     try {
       await files.remove(dirFor(filed.id));
     } catch (error) {
-      try {
-        await persist({
-          ...filed,
-          updatedAt: stamp(),
-          cleanup: 'pending',
-          cleanupFailure: { message: messageOf(error) },
-        });
-      } catch {
-        // Nothing left to record it in. The receipt is still terminal.
-      }
+      await record({
+        ...filed,
+        updatedAt: stamp(),
+        cleanup: 'pending',
+        cleanupFailure: { message: messageOf(error) },
+      });
     }
   };
 
   return {
     /**
-     * Files a report, or finishes filing one. Resolves only with a durable
-     * receipt; rejects only with a `FilingError` that is safe to act on.
+     * Files a report, or finishes filing one. Resolves with the receipt for a
+     * report GitHub has accepted; rejects only with an error that is safe to act
+     * on — a `FilingError` naming the Filing to resume, or, from `begin`, a
+     * `GitHubError` for a Filing that never came into existence.
+     *
+     * "Safe to act on" is what the wrapper below buys, and it is not a formality:
+     * the app reads `filingId` off the error to decide whether [Try again]
+     * RESUMES this Filing or starts a new one, and shows the message verbatim.
+     * An untyped error that escaped here would take the id with it — and a
+     * [Try again] with no id files the report a second time.
      */
     async file(command: FilingCommand): Promise<FilingReceipt> {
       const snapshot =
         command.kind === 'new'
           ? await begin(command.draft, command.repo)
-          : await loadSnapshot(command.filingId);
+          : await loadSnapshot(command.filingId).catch(asFilingError(command.filingId));
 
-      const filed = await attempt(snapshot, command.decision);
+      const filed = await attempt(snapshot, command.decision).catch(asFilingError(snapshot.id));
       await cleanup(filed);
       return filed.receipt;
     },

@@ -125,10 +125,14 @@ What `file()` guarantees, in the order it happens:
    the whole draft directory into `<appdata>/filings/<id>/draft/`. One rename on
    one volume: no screenshot is copied, and the report is frozen — later typing
    and later screenshots cannot reach what is being written.
-3. **Terminal success.** `file` resolves only after the receipt is durable in
-   `<appdata>/filings/<id>/filing.json`. Cleanup runs afterwards, deletes only
-   that one directory, and can never turn a filed report back into a retryable
-   failure — by then success is a fact on disk, not a value in flight.
+3. **Terminal success.** The submit is over the instant GitHub accepts the
+   report. The receipt is then written to `<appdata>/filings/<id>/filing.json`
+   and the workspace deleted, but neither of those is what makes it filed:
+   nothing after the remote write — a failed receipt write, a failed cleanup —
+   can turn a filed report back into a retryable failure, because a retry after
+   acceptance is a second report. A lost receipt write costs the MEMORY of the
+   outcome across a restart, not the outcome; for as long as the process lives,
+   a resume of that identity still returns the receipt rather than filing again.
 
 A pre-terminal failure throws a `FilingError` carrying the id, and the only safe
 way to try again is to RESUME it: `file({kind: 'resume', filingId, decision})`,
@@ -172,14 +176,14 @@ src/core/                     no IO, no DOM — everything injected
                               merely BROKE degrades to the CLI default, uncached.
   github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
                               the open-issue list. Every `gh` WRITE moved to filing/.
-  filing/       38 tests      the Filing transaction: one verb (`file`) from a final
+  filing/       43 tests      the Filing transaction: one verb (`file`) from a final
                               draft to a durable receipt. Assigns an opaque identity
                               before the first remote write and carries it in the
                               body as a hidden HTML comment; takes the draft
                               directory by an atomic rename; uploads, renders and
-                              creates; and returns only once the receipt is on disk.
-                              Cleanup runs after that and can never turn a filed
-                              report back into a retryable failure. renderSection is
+                              creates; and writes the receipt to disk. Neither that
+                              write nor the cleanup after it can turn a filed report
+                              back into a retryable failure. renderSection is
                               the one place section markdown is produced, so the
                               no-fabrication rule is enforced where it cannot be
                               bypassed: an emptied section is dropped, not headed.
@@ -763,9 +767,9 @@ reproduce the real failure is not evidence.
   next capture. A matching Filing identity becomes a Filing receipt; an
   authoritative no-match resumes the same Filing automatically.
 - **Filing success is terminal.** Once GitHub confirms the issue or comment and
-  returns its URL and number, the report is filed. A later local cleanup failure
-  may not make it retryable or permit another filing.
-- **Filing receipt** — durable proof that GitHub accepted an issue or comment:
+  returns its URL and number, the report is filed. No later local failure — the
+  receipt write included — may make it retryable or permit another filing.
+- **Filing receipt** — proof that GitHub accepted an issue or comment:
   its URL, issue number, and target. Pending receipts form a cleanup queue
   independent of the active Draft slot: they restore as Done after a crash but
   never block the next report or permit the filed report to be retried.

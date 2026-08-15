@@ -85,9 +85,13 @@ export interface UiServices {
   refine(request: RefineRequest): Promise<RefineOutcome>;
   followUp(thread: Thread, answers: string[], candidates: OpenIssue[]): Promise<RefinedDraft>;
   /**
-   * Files a report, or resumes the Filing that already owns one. Resolves only
-   * once the receipt is durable; rejects with a `FilingError` carrying the id to
-   * resume. Everything below it — upload, rendering, cleanup — is Filing's.
+   * Files a report, or resumes the Filing that already owns one. Resolves once
+   * GitHub has accepted it, and rejects only BEFORE that — so a rejection here
+   * can always be retried, and a resolution never needs to be. A rejection
+   * carries the id to resume whenever there is a Filing to resume (see
+   * `FilingError`); one raised before the Filing existed does not, and retrying
+   * as a new report is then the correct move. Everything below it — upload,
+   * rendering, receipt, cleanup — is Filing's.
    */
   file(command: FilingCommand): Promise<FilingReceipt>;
 

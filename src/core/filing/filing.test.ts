@@ -754,29 +754,148 @@ describe('a Filing that could not even start', () => {
 // ── Terminal success ────────────────────────────────────────────────────────
 
 describe('success is terminal', () => {
-  it('returns only after the receipt is durable on disk', async () => {
+  /*
+   * GitHub accepts the report, and only the write that RECORDS that fails — a
+   * full disk, a locked file, the machine losing power mid-write.
+   *
+   * The submit is over at that point. Reporting it as a failure would hand the
+   * user a [Try again] that files their report a SECOND time (QA #31: two issues
+   * from one Submit), so the durability failure must not reach them as one.
+   * Every other snapshot write is left working, so the failure is pinned to the
+   * receipt rather than to setup.
+   */
+  /** `nodeFiles` with the snapshot write for one state rigged to fail. */
+  const snapshotWriteFails = (state: string): FileStore => ({
+    ...nodeFiles,
+    writeText: async (path, text) => {
+      if (text.includes(`"state":"${state}"`)) throw new Error('injected: power lost');
+      return nodeFiles.writeText(path, text);
+    },
+  });
+
+  for (const [label, target] of [
+    ['a new issue', { kind: 'new-issue' } as const],
+    ['a comment', { kind: 'comment', issueNumber: 7 } as const],
+  ] as const) {
+    it(`reports success when the receipt write fails — ${label}`, async () => {
+      await withFiling(
+        async (h) => {
+          const receipt = await h.fileNew(draft({ target }));
+
+          // What GitHub accepted is what the user is told, URL and all.
+          expect(receipt.url).toContain('github.com/c3lew/Quacket/issues/');
+          expect(receipt.filingId).toBe('fil_1');
+          expect(createCalls(h.runner)).toHaveLength(1);
+        },
+        { files: snapshotWriteFails('filed') },
+      );
+    });
+  }
+
+  it('does not create a second report when a lost receipt is resumed anyway', async () => {
     /*
-     * GitHub accepts the issue, and only the write that RECORDS that fails. If
-     * `file` resolved on the remote response rather than on the durable receipt,
-     * this would pass silently — and the next run would have no idea a report had
-     * been filed. Every other snapshot write is left working on purpose, so the
-     * failure is pinned to the receipt and not to setup.
+     * The end of QA #31's walkthrough: the receipt write is lost, and the same
+     * identity is resumed regardless. `2` here is the duplicate report — one
+     * Submit, two issues on GitHub, and no way to tell from inside Quacket.
+     *
+     * The cleanup removal is broken too, on purpose. Both are the same disk, so
+     * assuming the second one works would leave a snapshot saying `filing` with
+     * no receipt behind — which is exactly what a resume would file again.
      */
     const files: FileStore = {
-      ...nodeFiles,
-      writeText: async (path, text) => {
-        if (text.includes('"state":"filed"')) throw new Error('injected receipt write failure');
-        return nodeFiles.writeText(path, text);
+      ...snapshotWriteFails('filed'),
+      remove: async (path) => {
+        if (path.includes('filings')) throw new Error('injected: locked');
+        return nodeFiles.remove(path);
       },
     };
     await withFiling(
       async (h) => {
-        await expect(h.fileNew(draft())).rejects.toBeTruthy();
-        // The remote write DID happen — this is exactly the ambiguous case, and
-        // it must never look like success.
+        const receipt = await h.fileNew(draft());
+        const again = await h.file({
+          kind: 'resume',
+          filingId: receipt.filingId,
+          decision: 'as-captured',
+        });
+
+        expect(again).toEqual(receipt);
         expect(createCalls(h.runner)).toHaveLength(1);
+        // The state the resume had to survive: the disk still thinks it never finished.
+        const stale = await h.snapshot('fil_1');
+        expect(stale['state']).toBe('filing');
+        expect(stale['receipt']).toBeUndefined();
       },
       { files },
+    );
+  });
+
+  it('rejects with a Filing — never a raw filesystem error — when a snapshot read blows up', async () => {
+    /*
+     * The module's contract in the one place it used to leak: an unexpected
+     * error escaping untyped takes the Filing id with it, and the app's [Try
+     * again] then starts a NEW Filing rather than resuming this one. The
+     * filesystem's own wording is dropped too — `EBUSY` is not a sentence.
+     */
+    const files = breaking('readText', (path) => path.endsWith('filing.json'));
+    await withFiling(
+      async (h) => {
+        await expect(
+          h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' }),
+        ).rejects.toMatchObject({
+          name: 'FilingError',
+          filingId: 'fil_1',
+          message: expect.not.stringContaining('injected'),
+        });
+      },
+      { files },
+    );
+  });
+
+  it('rejects with a Filing when the FROZEN report on disk is unreadable', async () => {
+    // Same contract, the other side of it: this one throws from inside the
+    // attempt rather than from the snapshot load, and used to escape as a raw
+    // `SyntaxError` — no id, and JSON parser wording in the palette.
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { exitCode: 1, stderr: 'gh: server error (HTTP 500)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft())).rejects.toMatchObject({ filingId: 'fil_1' });
+        await h.files.writeText(
+          joinPath(h.dir, 'filings', 'fil_1', 'draft', 'draft.json'),
+          '{not json',
+        );
+
+        await expect(
+          h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' }),
+        ).rejects.toMatchObject({
+          name: 'FilingError',
+          filingId: 'fil_1',
+          message: expect.not.stringContaining('JSON'),
+        });
+      },
+      { runner },
+    );
+  });
+
+  it('reports the GitHub failure even when recording it fails too', async () => {
+    // The disk problem must not overwrite the reason the user actually needs:
+    // the remote failure, with the id that makes [Try again] resume this Filing.
+    const files = snapshotWriteFails('failed');
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { exitCode: 1, stderr: 'gh: server error (HTTP 500)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft())).rejects.toMatchObject({
+          name: 'FilingError',
+          filingId: 'fil_1',
+          message: 'Could not create the issue.',
+        });
+      },
+      { files, runner },
     );
   });
 
