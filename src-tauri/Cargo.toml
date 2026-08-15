@@ -1,6 +1,6 @@
 [package]
 name = "quacket"
-version = "0.2.5"
+version = "0.2.6"
 description = "Turn a messy observation into a clean GitHub issue."
 edition = "2021"
 rust-version = "1.82"
