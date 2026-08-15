@@ -154,8 +154,31 @@ Consequences worth knowing:
   stale reuse. The key deliberately is not the image id: an id survives
   annotation, the bytes do not. Receipts live in the Filing that earned them;
   nothing shares them between Filings, because nothing needs to yet.
-- **Crash reconciliation against the hidden identity is still the open ticket**
-  under #24; the marker every filing writes is what makes it possible.
+- **Startup reconciles what a crash left behind** (#28). `recover()` walks every
+  Filing workspace on disk and streams `checking` / `filed` / `pending` /
+  `failed` — a stream, not a summary, so a slow GitHub costs a status line and
+  never the capture box. The three facts it distinguishes are the whole design:
+  an exact marker match reconstructs the receipt with **no second create call**;
+  an authoritative no-match (a complete, parsed pagination of the repo's issues
+  or the issue's comments with the identity absent) resumes the SAME Filing,
+  because the user already pressed Submit; anything else — offline, signed out,
+  rate limited, malformed, interrupted, empty-handed — is `pending`, which never
+  creates remotely and never offers a Retry. `failed` is emitted only with
+  durable evidence that nothing was created (a resume that died on the upload
+  leg, which runs strictly before the create), so a Retry cannot duplicate.
+  Indexed GitHub search is deliberately unused: it can find a report but its lag
+  means it can never prove one is absent.
+- **A pending cleanup drains on that same pass** (#33), and a stuck one records
+  when it first failed and how many times it has been tried — `updatedAt` moves
+  on every write, so it could not tell the first failure from the fifth.
+- **A receipt is self-sufficient.** It carries the repo, the target and the
+  title, not just the URL: the workspace holding the report is deleted when
+  cleanup succeeds, so a recovered Done screen has nowhere else to read them
+  from. Both paths build the done row from the receipt (`receiptEntry`).
+- **The palette shows a recovered report as Done only on an untouched capture
+  box.** Recovery races the user; replacing what they are typing with a done
+  screen would be the interruption Quacket exists to avoid. The non-blocking
+  previous-report status with Check again is #29, still open.
 
 ## Module map
 
@@ -181,15 +204,19 @@ src/core/                     no IO, no DOM — everything injected
                               merely BROKE degrades to the CLI default, uncached.
   github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
                               the open-issue list. Every `gh` WRITE moved to filing/.
-  filing/       52 tests      the Filing transaction: one verb (`file`) from a final
+  filing/       73 tests      the Filing transaction: one verb (`file`) from a final
                               draft to a durable receipt. Assigns an opaque identity
                               before the first remote write and carries it in the
                               body as a hidden HTML comment; takes the draft
                               directory by an atomic rename; uploads, renders and
                               creates; and writes the receipt to disk. Neither that
                               write nor the cleanup after it can turn a filed report
-                              back into a retryable failure. renderSection is
-                              the one place section markdown is produced, so the
+                              back into a retryable failure. `recover()` is the
+                              second verb: it streams what a crash left behind,
+                              deciding filed / resume / pending from an exact
+                              marker lookup (lookup.ts), never a fuzzy title.
+                              renderSection is the one place section markdown is
+                              produced, so the
                               no-fabrication rule is enforced where it cannot be
                               bypassed: an emptied section is dropped, not headed.
   drafts/       15 tests      auto-save from the first keystroke; nothing is lost
@@ -198,7 +225,7 @@ src/core/                     no IO, no DOM — everything injected
                               writes the final draft.json, and RENAMES the directory
                               into a Filing workspace. No copy, and no draft is ever
                               in two places.
-  ui/           91 tests      reducer.ts (pure stage machine; effects come back as
+  ui/           94 tests      reducer.ts (pure stage machine; effects come back as
                               data) + onboarding.ts. `MachineState` (gh + providers)
                               is split from `DetectedState` on purpose: it is exactly
                               the part no palette control can change, so the cards
@@ -216,8 +243,8 @@ src/ui/                       React. Renders the reducer, performs its effects.
   main.tsx                    entry: builds Platform, composes both service layers.
                               The one .tsx that imports Tauri directly — it IS the
                               platform edge; App.tsx and below stay host-agnostic.
-  App.tsx       70 tests      reducer host + effect performer + keyboard owner
-  components/  193 tests      services.ts (UI-facing port over src/app) + keymap /
+  App.tsx       84 tests      reducer host + effect performer + keyboard owner
+  components/  198 tests      services.ts (UI-facing port over src/app) + keymap /
                               fuzzy / format / session / host / notify / settings —
                               every real decision lives in a pure .ts module.
                               Picker.tsx is the ONLY file that writes a `<select>`;
@@ -315,7 +342,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 719 passed, 30 files
+npx vitest run                    # tests            → 764 passed, 30 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 31 passed

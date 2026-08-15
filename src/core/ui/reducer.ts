@@ -119,6 +119,8 @@ export type Action =
   /** `filingId` is present whenever the failure came from a started Filing. */
   | { type: 'submit-failed'; error: Failure; filingId?: string }
   | { type: 'file-without-images' }
+  /** A report from a previous run that startup recovery proved is on GitHub. */
+  | { type: 'recovered'; result: SubmitResult }
   | { type: 'discard' }
   | { type: 'new-report' };
 
@@ -462,6 +464,26 @@ export function reduce(state: UiState, action: Action): Next {
         state: { ...state, images: [], stage: 'submitting', failure: null },
         effects: [{ type: 'submit', withoutImages: true }],
       };
+
+    /**
+     * A report interrupted by a crash, coming back as Done.
+     *
+     * Startup recovery asked GitHub and got a receipt, so this is the same
+     * terminal outcome a live submit produces — and it lands on the same screen,
+     * because "it went out after all" is not a special state the user should
+     * have to learn.
+     *
+     * It only lands on an UNTOUCHED palette. Recovery races the user: a lookup
+     * that takes twenty seconds resolves long after they have started typing the
+     * next report, and replacing what they are writing with a done screen would
+     * be the interruption Quacket exists to avoid. Nothing is lost when it is
+     * refused — the receipt is durable, and the previous-report status (#29) is
+     * where a recovery the user was too busy to see belongs.
+     */
+    case 'recovered':
+      return state.stage === 'input' && !hasDraft(state)
+        ? only({ ...state, stage: 'done', result: action.result })
+        : only(state);
 
     /**
      * The ONLY deliberate way to lose work, and the only thing in the machine

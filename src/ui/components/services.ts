@@ -16,7 +16,7 @@
  */
 
 import type { Services as AppServices } from '../../app/services.ts';
-import type { FilingCommand, FilingReceipt } from '../../core/filing/filing.ts';
+import type { FilingCommand, FilingReceipt, RecoveryEvent } from '../../core/filing/filing.ts';
 import { parseRefined } from '../../core/refine/parse.ts';
 import { buildSystemPrompt, buildUserPrompt, prefilterCandidates } from '../../core/refine/prompt.ts';
 import { REFINE_SCHEMA } from '../../core/refine/schema.ts';
@@ -94,6 +94,14 @@ export interface UiServices {
    * rendering, receipt, cleanup — is Filing's.
    */
   file(command: FilingCommand): Promise<FilingReceipt>;
+  /**
+   * Every Filing a previous run left unfinished, resolving one at a time.
+   *
+   * Iterated on its own at boot and never awaited by anything the capture box
+   * needs, so a GitHub that is slow or gone costs a status line rather than a
+   * palette. It never rejects — expected failures arrive as `pending` events.
+   */
+  recover(): AsyncIterable<RecoveryEvent>;
 
   loadDraft(): Promise<Draft | null>;
   saveDraft(draft: Draft): Promise<void>;
@@ -255,6 +263,7 @@ export function createUiServices({ core, platform, runner }: UiServiceDeps): UiS
      * together with a durable receipt.
      */
     file: (command) => core.filing.file(command),
+    recover: () => core.filing.recover(),
 
     loadDraft: () => core.drafts.load(),
     saveDraft: (draft) => core.drafts.save(draft),

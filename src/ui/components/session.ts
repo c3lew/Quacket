@@ -5,12 +5,8 @@
  * Kept pure and out of the components so both directions are testable.
  */
 
-import type {
-  Draft,
-  OpenIssue,
-  RefinedDraft,
-  SubmitResult,
-} from '../../core/types.ts';
+import type { FilingReceipt } from '../../core/filing/filing.ts';
+import type { Draft, OpenIssue, RefinedDraft } from '../../core/types.ts';
 import type { Action, UiState } from '../../core/ui/reducer.ts';
 
 // ── Similar-issue hygiene ───────────────────────────────────────────────────
@@ -225,17 +221,20 @@ export const RECENT_MAX = 5;
 export const pushRecent = (list: SentEntry[], entry: SentEntry): SentEntry[] =>
   [entry, ...list.filter((e) => e.url !== entry.url)].slice(0, RECENT_MAX);
 
-export const sentEntry = (
-  result: SubmitResult,
-  state: UiState,
-  repo: string,
-): SentEntry | null => {
-  if (state.refined === null) return null;
-  return {
-    issueNumber: result.issueNumber,
-    title: state.refined.title,
-    url: result.url,
-    kind: state.target.kind,
-    repo,
-  };
-};
+/**
+ * The row the done screen reads, taken from the RECEIPT and nothing else.
+ *
+ * It used to be assembled from live `UiState` — the title off `refined`, the
+ * repo off the switcher — which worked only while the report that was filed and
+ * the report on screen were the same one. A recovered Filing breaks that: it was
+ * filed by a previous run, its frozen report may already have been cleaned up,
+ * and the palette may be sitting on nothing at all. So the receipt carries these
+ * facts, and both paths build the row the same way.
+ */
+export const receiptEntry = (receipt: FilingReceipt): SentEntry => ({
+  issueNumber: receipt.issueNumber,
+  title: receipt.title,
+  url: receipt.url,
+  kind: receipt.target.kind,
+  repo: receipt.repo,
+});

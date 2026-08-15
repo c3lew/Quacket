@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type {
-  Draft,
-  ImageAttachment,
-  OpenIssue,
-  RefinedDraft,
-  SubmitResult,
-} from '../../core/types.ts';
+import type { FilingReceipt } from '../../core/filing/filing.ts';
+import type { Draft, ImageAttachment, OpenIssue, RefinedDraft } from '../../core/types.ts';
 import { initialState, reduce, type UiState } from '../../core/ui/reducer.ts';
 import {
   dropInventedIssues,
@@ -14,8 +9,8 @@ import {
   pushRecent,
   shouldFoldAnswers,
   shouldSaveDraft,
+  receiptEntry,
   restoreActions,
-  sentEntry,
   toDraft,
   type SentEntry,
 } from './session.ts';
@@ -314,31 +309,30 @@ describe('dropInventedIssues', () => {
   });
 });
 
-describe('sentEntry', () => {
-  const result: SubmitResult = { url: 'https://github.com/c3lew/Quacket/issues/123', issueNumber: 123 };
+describe('receiptEntry', () => {
+  const receipt: FilingReceipt = {
+    url: 'https://github.com/c3lew/Quacket/issues/123',
+    issueNumber: 123,
+    filingId: 'fil_1',
+    repo: 'c3lew/Quacket',
+    target: { kind: 'new-issue' },
+    title: refined().title,
+  };
 
-  it('takes the title from the draft — SubmitResult cannot carry one', () => {
-    const state: UiState = { ...initialState(), refined: refined() };
-    expect(sentEntry(result, state, 'c3lew/Quacket')).toEqual({
+  it('takes every fact from the receipt, so a recovered report has a row too', () => {
+    expect(receiptEntry(receipt)).toEqual({
       issueNumber: 123,
       title: refined().title,
-      url: result.url,
+      url: receipt.url,
       kind: 'new-issue',
       repo: 'c3lew/Quacket',
     });
   });
 
   it('records a comment as a comment, so the row does not claim a new issue', () => {
-    const state: UiState = {
-      ...initialState(),
-      refined: refined(),
-      target: { kind: 'comment', issueNumber: 42 },
-    };
-    expect(sentEntry(result, state, 'c3lew/Quacket')?.kind).toBe('comment');
-  });
-
-  it('refuses to invent a row with no draft behind it', () => {
-    expect(sentEntry(result, initialState(), 'r')).toBeNull();
+    expect(receiptEntry({ ...receipt, target: { kind: 'comment', issueNumber: 42 } }).kind).toBe(
+      'comment',
+    );
   });
 });
 

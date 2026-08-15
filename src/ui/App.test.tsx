@@ -33,6 +33,7 @@ import {
   type Settings,
 } from '../core/types.ts';
 import type { DetectedState } from '../core/ui/onboarding.ts';
+import type { FilingReceipt, RecoveryEvent } from '../core/filing/filing.ts';
 import { App } from './App.tsx';
 import type { UiServices } from './components/services.ts';
 
@@ -103,6 +104,23 @@ const refined = (extra: Partial<RefinedDraft> = {}): RefinedDraft => ({
 
 const never = (): Promise<never> => new Promise(() => {});
 
+const receipt = (extra: Partial<FilingReceipt> = {}): FilingReceipt => ({
+  url: 'https://github.com/c3lew/Quacket/issues/7',
+  issueNumber: 7,
+  filingId: 'fil_1',
+  repo: REPO.nameWithOwner,
+  target: { kind: 'new-issue' },
+  title: refined().title,
+  ...extra,
+});
+
+/** A scripted recovery pass, as the async stream `recover` really hands back. */
+const recovered = (events: RecoveryEvent[]): AsyncIterable<RecoveryEvent> => ({
+  async *[Symbol.asyncIterator]() {
+    for (const event of events) yield event;
+  },
+});
+
 /** Everything the palette touches, scripted. Overridable one method at a time. */
 function fakeServices(extra: Partial<UiServices> = {}) {
   const spies = {
@@ -116,11 +134,10 @@ function fakeServices(extra: Partial<UiServices> = {}) {
       candidates: [],
     })),
     followUp: vi.fn(async () => refined()),
-    file: vi.fn(async () => ({
-      url: 'https://github.com/c3lew/Quacket/issues/7',
-      issueNumber: 7,
-      filingId: 'fil_1',
-    })),
+    file: vi.fn(async () => receipt()),
+    // Nothing was interrupted: the common case, and the one every other test
+    // needs to be true so recovery cannot reach the palette behind its back.
+    recover: vi.fn(() => recovered([])),
     loadDraft: vi.fn(async (): Promise<Draft | null> => null),
     saveDraft: vi.fn(async () => {}),
     attachImage: vi.fn(async () => {}),
@@ -1788,5 +1805,77 @@ describe('refreshing the repo list without restarting', () => {
 
     expect(await screen.findByText(/born-after-boot/)).toBeVisible();
     expect(screen.queryByText(/could not be refreshed/)).toBeNull();
+  });
+});
+
+// ── Startup recovery, from the palette's side ───────────────────────────────
+
+describe('a report interrupted by a crash', () => {
+  it('comes back as Done, with the link, without the user checking GitHub', async () => {
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        recovered([
+          { state: 'checking', filingId: 'fil_1' },
+          { state: 'filed', filingId: 'fil_1', receipt: receipt({ issueNumber: 42 }) },
+        ]),
+      ),
+    });
+
+    await boot(services);
+
+    expect(await screen.findByText('Issue #42 filed')).toBeTruthy();
+    // The whole point of the receipt carrying its own facts: the report it
+    // describes was filed by a previous run and is not on screen anywhere.
+    expect(screen.getByText(refined().title, { exact: false })).toBeTruthy();
+    await click(/Open in browser/);
+    expect(services.openUrl).toHaveBeenCalledWith('https://github.com/c3lew/Quacket/issues/7');
+  });
+
+  it('never files anything itself — recovery is a read, and the palette is a reader', async () => {
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        recovered([{ state: 'filed', filingId: 'fil_1', receipt: receipt() }]),
+      ),
+    });
+
+    await boot(services);
+    await screen.findByText('Issue #7 filed');
+
+    expect(services.file).not.toHaveBeenCalled();
+  });
+
+  it('leaves the capture box usable while GitHub takes forever', async () => {
+    // Story 29: restoring an old report must not recreate the interruption it
+    // was trying to save the user from. The stream simply never yields.
+    const services = fakeServices({
+      recover: vi.fn(() => ({ async *[Symbol.asyncIterator]() { await never(); } })),
+    });
+
+    await boot(services);
+    await type('the next thing that broke');
+
+    expect(await screen.findByDisplayValue('the next thing that broke')).toBeTruthy();
+    await click(/Refine/);
+    expect(await screen.findByDisplayValue(refined().title)).toBeTruthy();
+  });
+
+  it('says nothing at all for a report it still cannot resolve', async () => {
+    // Pending is NOT a failure, and the error card is where a Retry lives — so
+    // an unresolved report must not land on one. The status surface it belongs
+    // on is #29; until then it stays quiet rather than pretending.
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        recovered([
+          { state: 'checking', filingId: 'fil_1' },
+          { state: 'pending', filingId: 'fil_1', message: 'Could not check GitHub for this report.' },
+        ]),
+      ),
+    });
+
+    await boot(services);
+
+    expect(await screen.findByPlaceholderText(CAPTURE_BOX)).toBeTruthy();
+    expect(screen.queryByText(/Could not check GitHub/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Try again/ })).toBeNull();
   });
 });

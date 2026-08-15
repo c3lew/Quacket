@@ -26,8 +26,11 @@ import type { Draft, ImageAttachment, RefinedDraft, Repo } from '../types.ts';
 import {
   createFiling,
   filingMarker,
+  type Filing,
   type FilingCommand,
   type FilingDecision,
+  type FilingReceipt,
+  type RecoveryEvent,
 } from './filing.ts';
 
 // Fixed clock so asset paths — and therefore argv — are deterministic.
@@ -144,7 +147,13 @@ interface Harness {
     repo?: Repo,
     decision?: FilingDecision,
   ): Promise<{ url: string; issueNumber: number; filingId: string }>;
-  file(command: FilingCommand): Promise<{ url: string; issueNumber: number; filingId: string }>;
+  file(command: FilingCommand): Promise<FilingReceipt>;
+  /**
+   * A fresh Filing over the same disk — exactly what the NEXT LAUNCH of the app
+   * sees. Nothing in-memory survives it, which is the point: a receipt this
+   * process is holding is not a receipt a later run can find.
+   */
+  restart(): Filing;
   /** Filing workspaces still on disk, i.e. cleanup that has not finished. */
   filings(): Promise<string[]>;
   snapshot(id: string): Promise<Record<string, unknown>>;
@@ -169,14 +178,16 @@ const withFiling = async (
     const files = options.files ?? nodeFiles;
     const drafts = new DraftStore(dir, files);
     const ids = [...(options.ids ?? ['fil_1', 'fil_2', 'fil_3'])];
-    const filing = createFiling({
-      runner,
-      files,
-      drafts,
-      baseDir: dir,
-      now: NOW,
-      newId: () => ids.shift() ?? 'fil_overflow',
-    });
+    const launch = (): Filing =>
+      createFiling({
+        runner,
+        files,
+        drafts,
+        baseDir: dir,
+        now: NOW,
+        newId: () => ids.shift() ?? 'fil_overflow',
+      });
+    const filing = launch();
 
     await run({
       dir,
@@ -184,6 +195,7 @@ const withFiling = async (
       drafts,
       files,
       file: (command) => filing.file(command),
+      restart: launch,
       fileNew: async (d, repo = PUBLIC_REPO, decision = 'as-captured') => {
         // Exactly how the app gets here: the draft is on disk before Submit.
         await drafts.save(d);
@@ -250,6 +262,9 @@ describe('filing a new issue', () => {
         url: 'https://github.com/c3lew/Quacket/issues/42',
         issueNumber: 42,
         filingId: 'fil_1',
+        repo: 'c3lew/Quacket',
+        target: { kind: 'new-issue' },
+        title: 'Tray icon disappears after unlocking Windows',
       });
     });
   });
@@ -395,6 +410,9 @@ describe('filing a comment', () => {
         url: 'https://github.com/c3lew/Quacket/issues/7#issuecomment-991',
         issueNumber: 7,
         filingId: 'fil_1',
+        repo: 'c3lew/Quacket',
+        target: { kind: 'comment', issueNumber: 7 },
+        title: 'Tray icon disappears after unlocking Windows',
       });
     });
   });
@@ -1523,5 +1541,459 @@ describe('durable Asset receipts', () => {
       },
       { runner },
     );
+  });
+});
+
+// ── Startup recovery ────────────────────────────────────────────────────────
+
+/**
+ * Every case here starts by CRASHING a real Filing — a lost receipt write, a
+ * failed upload, a locked workspace — and then launches a fresh Filing over the
+ * same directory, which is all a restart is. Nothing is hand-written onto disk:
+ * the state recovery has to read is the state the module itself left behind.
+ *
+ * The assertions that matter most are the negative ones. `createCalls` is how a
+ * duplicate report would show up, and it is checked in every case where GitHub
+ * might already hold the report.
+ */
+describe('startup recovery', () => {
+  /** `gh api user`: the actor filter the issue listing is narrowed by. */
+  const ACTOR = { cmd: 'gh', argsContain: ['api', 'user'] };
+
+  const issuesPage = (page: number): string =>
+    `repos/c3lew/Quacket/issues?state=all&creator=octocat&per_page=100&page=${page}`;
+  const commentsPage = (issue: number, page: number): string =>
+    `repos/c3lew/Quacket/issues/${issue}/comments?per_page=100&page=${page}`;
+
+  /** One issue as GitHub returns it, with the invisible identity in its body. */
+  const issueRow = (id: string, number = 42) => ({
+    number,
+    html_url: `https://github.com/c3lew/Quacket/issues/${number}`,
+    body: `The icon is gone.\n${filingMarker(id)}\n`,
+  });
+
+  const collect = async (filing: Filing): Promise<RecoveryEvent[]> => {
+    const events: RecoveryEvent[] = [];
+    for await (const event of filing.recover()) events.push(event);
+    return events;
+  };
+  const states = (events: RecoveryEvent[]): string[] => events.map((e) => e.state);
+  const filedIn = (events: RecoveryEvent[]): FilingReceipt | undefined =>
+    events.flatMap((e) => (e.state === 'filed' ? [e.receipt] : []))[0];
+
+  /** The crash this whole ticket exists for: GitHub said yes, nothing recorded it. */
+  const lostReceipt = (): FileStore => ({
+    ...nodeFiles,
+    writeText: async (path, text) => {
+      if (text.includes('"state":"filed"')) throw new Error('injected: power lost');
+      return nodeFiles.writeText(path, text);
+    },
+    // Same disk, so the cleanup that would have removed the stale snapshot is
+    // broken too — otherwise the evidence recovery reads would not be there.
+    remove: async (path) => {
+      if (path.includes('filings')) throw new Error('injected: locked');
+      return nodeFiles.remove(path);
+    },
+  });
+
+  it('resolves a lost receipt to filed, with no second create call', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+        // The disk still thinks it never finished. This is the ambiguity.
+        expect((await h.snapshot('fil_1'))['receipt']).toBeUndefined();
+
+        h.runner
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on(
+            { cmd: 'gh', argsContain: [issuesPage(1)] },
+            { stdout: JSON.stringify([issueRow('fil_1')]) },
+          );
+
+        const events = await collect(h.restart());
+
+        expect(states(events)).toEqual(['checking', 'filed']);
+        expect(filedIn(events)).toEqual({
+          url: 'https://github.com/c3lew/Quacket/issues/42',
+          issueNumber: 42,
+          filingId: 'fil_1',
+          repo: 'c3lew/Quacket',
+          target: { kind: 'new-issue' },
+          title: 'Tray icon disappears after unlocking Windows',
+        });
+        // The one thing that must never happen.
+        expect(createCalls(h.runner)).toHaveLength(1);
+      },
+      { files: lostReceipt() },
+    );
+  });
+
+  it('resolves a lost comment receipt the same way, from the comments endpoint', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft({ target: { kind: 'comment', issueNumber: 7 } }));
+
+        h.runner.on(
+          { cmd: 'gh', argsContain: [commentsPage(7, 1)] },
+          {
+            stdout: JSON.stringify([
+              {
+                html_url: 'https://github.com/c3lew/Quacket/issues/7#issuecomment-991',
+                body: `More detail.\n${filingMarker('fil_1')}\n`,
+              },
+            ]),
+          },
+        );
+
+        const events = await collect(h.restart());
+
+        expect(filedIn(events)).toMatchObject({
+          url: 'https://github.com/c3lew/Quacket/issues/7#issuecomment-991',
+          issueNumber: 7,
+          target: { kind: 'comment', issueNumber: 7 },
+        });
+        expect(createCalls(h.runner)).toHaveLength(1);
+        // A comment lookup needs no actor: the issue is already known.
+        expect(h.runner.calls.some((c) => c.args.includes('user'))).toBe(false);
+      },
+      { files: lostReceipt() },
+    );
+  });
+
+  it('matches the exact marker, never a report that merely looks the same', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+
+        h.runner.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          {
+            // Same title, same words, and a Quacket marker — a different Filing.
+            stdout: JSON.stringify([
+              { ...issueRow('fil_OTHER', 41), body: 'Tray icon disappears after unlocking Windows' },
+              issueRow('fil_ANOTHER', 40),
+            ]),
+          },
+        );
+
+        const events = await collect(h.restart());
+
+        // The listing was complete and this identity was not in it: an
+        // authoritative no-match, so the report is filed for the first time
+        // rather than matched to a stranger's issue.
+        expect(states(events)).toEqual(['checking', 'filed']);
+        expect(filedIn(events)?.issueNumber).toBe(42);
+        expect(createCalls(h.runner)).toHaveLength(2);
+      },
+      { files: lostReceipt() },
+    );
+  });
+
+  // ── Authoritative no-match ────────────────────────────────────────────────
+
+  /**
+   * A Filing that died on the UPLOAD leg never reached the create call, so
+   * GitHub genuinely has nothing — the honest way to leave an ambiguous Filing
+   * on disk with no report behind it.
+   */
+  const uploadDied = () =>
+    scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['--method', 'PUT'] },
+      { exitCode: 1, stderr: 'gh: server error (HTTP 500)' },
+    );
+
+  it('resumes the same Filing on an authoritative no-match, creating exactly one report', async () => {
+    const runner = uploadDied();
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft({ images: [image('img_1')] }))).rejects.toMatchObject({
+          filingId: 'fil_1',
+        });
+        expect(createCalls(h.runner)).toHaveLength(0);
+
+        // The next launch: uploads work again, and GitHub's listing is empty.
+        runner
+          .on({ cmd: 'gh', argsContain: ['--method', 'PUT'] }, { stdout: '{"commit":{"sha":"abc123def"}}' })
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        expect(states(events)).toEqual(['checking', 'filed']);
+        // The SAME identity — a second one would be a second report.
+        expect(filedIn(events)?.filingId).toBe('fil_1');
+        expect(createCalls(h.runner)).toHaveLength(1);
+        expect(sentBody(h.runner)).toContain(filingMarker('fil_1'));
+        // Filed and cleaned up: nothing left to recover a second time.
+        expect(await h.filings()).toEqual([]);
+      },
+      { runner },
+    );
+  });
+
+  it('returns a resumed create that loses its outcome to pending, not failed', async () => {
+    const runner = scriptedRunner().on({ cmd: 'gh', argsContain: ['issue', 'create'] }, { hangs: true });
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft())).rejects.toBeTruthy();
+
+        runner
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        // A create that timed out may or may not have landed. Pending, and the
+        // next launch asks GitHub again rather than asking the user.
+        expect(states(events)).toEqual(['checking', 'pending']);
+        expect(await h.filings()).toEqual(['fil_1']);
+      },
+      { runner },
+    );
+  });
+
+  it('emits failed only with durable evidence that nothing was created', async () => {
+    const runner = uploadDied();
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft({ images: [image('img_1')] }))).rejects.toBeTruthy();
+
+        runner
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        // Nothing on GitHub before the resume, and the resume died before the
+        // create leg — so a Retry cannot duplicate anything.
+        expect(events.at(-1)).toMatchObject({
+          state: 'failed',
+          kind: 'upload_failed',
+          filingId: 'fil_1',
+        });
+        expect(createCalls(h.runner)).toHaveLength(0);
+        expect(await h.filings()).toEqual(['fil_1']);
+      },
+      { runner },
+    );
+  });
+
+  // ── Inconclusive lookups ──────────────────────────────────────────────────
+
+  /**
+   * Every way a lookup can fail to be an answer. They all mean the same thing
+   * and must produce the same outcome: pending, no create, no Retry.
+   */
+  const inconclusive: Array<[string, (runner: FakeRunner) => void]> = [
+    [
+      'offline',
+      (r) => {
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          { exitCode: 1, stderr: 'gh: dial tcp: lookup api.github.com: no such host' },
+        );
+      },
+    ],
+    [
+      'not signed in',
+      (r) => {
+        r.on(ACTOR, { exitCode: 1, stderr: 'gh: authentication required' });
+      },
+    ],
+    [
+      'rate limited',
+      (r) => {
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          { exitCode: 1, stderr: 'gh: API rate limit exceeded (HTTP 403)' },
+        );
+      },
+    ],
+    [
+      // The dangerous one: an empty listing and output nobody saw are the same
+      // `[]` to a parser, and one of them would auto-resume into a duplicate.
+      'a page that came back empty-handed',
+      (r) => {
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          { stdout: '' },
+        );
+      },
+    ],
+    [
+      'a malformed page',
+      (r) => {
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          { stdout: '<html>502 Bad Gateway</html>' },
+        );
+      },
+    ],
+    [
+      'GitHub taking too long',
+      (r) => {
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' }).on(
+          { cmd: 'gh', argsContain: [issuesPage(1)] },
+          { hangs: true },
+        );
+      },
+    ],
+    [
+      'pagination interrupted after a full page',
+      (r) => {
+        const full = Array.from({ length: 100 }, (_, i) => issueRow('fil_SOMEONE_ELSE', 100 + i));
+        r.on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: JSON.stringify(full) })
+          .on({ cmd: 'gh', argsContain: [issuesPage(2)] }, { exitCode: 1, stderr: 'gh: HTTP 502' });
+      },
+    ],
+  ];
+
+  for (const [label, script] of inconclusive) {
+    it(`stays pending and creates nothing when the lookup is inconclusive — ${label}`, async () => {
+      await withFiling(
+        async (h) => {
+          await h.fileNew(draft());
+          const before = createCalls(h.runner).length;
+
+          script(h.runner);
+          const events = await collect(h.restart());
+
+          expect(states(events)).toEqual(['checking', 'pending']);
+          expect(createCalls(h.runner)).toHaveLength(before);
+          // Still here, still ambiguous, and still not something to hand the
+          // user a Retry for.
+          expect(await h.filings()).toEqual(['fil_1']);
+
+          // Capture is untouched: the next report saves and reopens as normal.
+          await h.drafts.save(draft({ id: 'draft_next', raw: 'the next one' }));
+          expect((await h.drafts.load())?.raw).toBe('the next one');
+        },
+        { files: lostReceipt() },
+      );
+    });
+  }
+
+  it('records why it could not tell, so a stuck Filing is diagnosable from disk', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+        h.runner.on(ACTOR, { exitCode: 1, stderr: 'gh: authentication required' });
+
+        await collect(h.restart());
+
+        expect((await h.snapshot('fil_1'))['lastCheck']).toEqual({
+          message: 'Could not confirm which GitHub account is signed in.',
+          at: '2026-07-16T09:30:00.000Z',
+        });
+      },
+      { files: lostReceipt() },
+    );
+  });
+
+  // ── The cleanup queue ─────────────────────────────────────────────────────
+
+  /** `remove` stuck for the first run only — the second launch can finish it. */
+  const stuckCleanup = (): { files: FileStore; unstick: () => void } => {
+    let locked = true;
+    return {
+      unstick: () => void (locked = false),
+      files: {
+        ...nodeFiles,
+        remove: async (path) => {
+          if (locked && path.includes('filings')) throw new Error('injected: locked');
+          return nodeFiles.remove(path);
+        },
+      },
+    };
+  };
+
+  it('restores Done from a durable receipt, and drains the workspace behind it', async () => {
+    const { files, unstick } = stuckCleanup();
+    await withFiling(
+      async (h) => {
+        const receipt = await h.fileNew(draft());
+        expect(await h.filings()).toEqual(['fil_1']);
+        const before = ghCalls(h.runner).length;
+
+        unstick();
+        const events = await collect(h.restart());
+
+        // Terminal success stays terminal across a restart, link and all.
+        expect(states(events)).toEqual(['filed']);
+        expect(filedIn(events)).toEqual(receipt);
+        // …and no GitHub call of any kind was needed to say so.
+        expect(ghCalls(h.runner)).toHaveLength(before);
+        expect(await h.filings()).toEqual([]);
+      },
+      { files },
+    );
+  });
+
+  it('records when a cleanup got stuck and how often it has been tried', async () => {
+    const files = breaking('remove', (path) => path.includes('filings'));
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+        expect(await h.snapshot('fil_1')).toMatchObject({
+          cleanupFailure: { attempts: 1, at: '2026-07-16T09:30:00.000Z' },
+        });
+
+        await collect(h.restart());
+        await collect(h.restart());
+
+        // The count moves; the first failure's timestamp does not — "stuck
+        // since" is the fact, and rewriting it every startup would erase it.
+        expect(await h.snapshot('fil_1')).toMatchObject({
+          cleanupFailure: { attempts: 3, at: '2026-07-16T09:30:00.000Z' },
+        });
+      },
+      { files },
+    );
+  });
+
+  it('drains several pending cleanups independently, with no GitHub call at all', async () => {
+    const { files, unstick } = stuckCleanup();
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft({ id: 'draft_1' }));
+        await h.fileNew(draft({ id: 'draft_2' }));
+        expect((await h.filings()).sort()).toEqual(['fil_1', 'fil_2']);
+        const before = ghCalls(h.runner).length;
+
+        unstick();
+        const events = await collect(h.restart());
+
+        expect(states(events)).toEqual(['filed', 'filed']);
+        expect(ghCalls(h.runner)).toHaveLength(before);
+        expect(await h.filings()).toEqual([]);
+      },
+      { files },
+    );
+  });
+
+  it('reports a workspace it cannot read as pending rather than crashing the pass', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+        await h.files.writeText(joinPath(h.dir, 'filings', 'fil_1', 'filing.json'), '{ not json');
+
+        const events = await collect(h.restart());
+
+        // Unreadable is not absent: this workspace may hold a report GitHub
+        // already has, so nothing is created and nothing is deleted.
+        expect(states(events)).toEqual(['pending']);
+        expect(await h.filings()).toEqual(['fil_1']);
+        expect(createCalls(h.runner)).toHaveLength(1);
+      },
+      { files: lostReceipt() },
+    );
+  });
+
+  it('has nothing to say — and nothing to throw — when no Filing was interrupted', async () => {
+    await withFiling(async (h) => {
+      expect(await collect(h.restart())).toEqual([]);
+      expect(ghCalls(h.runner)).toHaveLength(0);
+    });
   });
 });

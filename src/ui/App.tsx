@@ -55,8 +55,8 @@ import {
   filingOwnsDraft,
   NO_REPO,
   pushRecent,
+  receiptEntry,
   restoreActions,
-  sentEntry,
   shouldFoldAnswers,
   shouldSaveDraft,
   toDraft,
@@ -306,11 +306,9 @@ export function App({ services }: AppProps) {
 
     try {
       const result = await services.file(command);
-      const entry = sentEntry(result, { ...current, refined }, target.nameWithOwner);
-      if (entry !== null) {
-        setLastSent(entry);
-        setRecent((list) => pushRecent(list, entry));
-      }
+      const entry = receiptEntry(result);
+      setLastSent(entry);
+      setRecent((list) => pushRecent(list, entry));
       /*
        * Story 16 says last-USED, not last-picked: a user who files against the
        * repos[0] default without ever touching the switcher must still get the
@@ -493,6 +491,31 @@ export function App({ services }: AppProps) {
       for (const action of restoreActions(saved)) dispatch(action);
     })();
   }, [services]);
+
+  /*
+   * The fourth independent boot job, and independent for the same reason as the
+   * other three: it talks to GitHub, which can be slow or gone, and NOTHING here
+   * may stand between the user and the capture box. It is not awaited, it is not
+   * joined to detection, and `recover` never rejects — so the worst a dead
+   * network can do is leave an old report unresolved until the next launch.
+   *
+   * Only `filed` is acted on today: a report that turned out to have reached
+   * GitHub comes back as Done, which is the whole of story 30. `pending` and
+   * `failed` are what the previous-report status (#29) will render; until then
+   * they resolve silently on disk rather than interrupting a user who has moved
+   * on, which is the same posture as leaving the palette untouched above.
+   */
+  useEffect(() => {
+    void (async () => {
+      for await (const event of services.recover()) {
+        if (event.state !== 'filed') continue;
+        const entry = receiptEntry(event.receipt);
+        setLastSent(entry);
+        setRecent((list) => pushRecent(list, entry));
+        act({ type: 'recovered', result: event.receipt });
+      }
+    })();
+  }, [act, services]);
 
   // The window is long-lived, so a mounted-once clock would drift for days.
   useEffect(() => {

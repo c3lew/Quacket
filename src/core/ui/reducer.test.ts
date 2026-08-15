@@ -769,3 +769,34 @@ describe('file-as-is claims no classification it does not have', () => {
     expect(filed.refined?.type).toBe('bug');
   });
 });
+
+// ── Startup recovery ────────────────────────────────────────────────────────
+
+describe('a report recovered after a crash', () => {
+  const result = { url: 'https://github.com/c3lew/Quacket/issues/42', issueNumber: 42 };
+
+  it('lands on Done, the same screen a live submit reaches', () => {
+    const state = run([{ type: 'recovered', result }]);
+
+    expect(state.stage).toBe('done');
+    expect(state.result).toEqual(result);
+  });
+
+  it('leaves a report the user is already typing exactly where it is', () => {
+    // Recovery races the user: a slow lookup can resolve minutes later, and
+    // replacing what they are writing with a done screen is the interruption
+    // Quacket exists to avoid.
+    const typing = run([{ type: 'edit-raw', raw: 'the next thing that broke' }]);
+    const state = run([{ type: 'recovered', result }], typing);
+
+    expect(state.stage).toBe('input');
+    expect(state.raw).toBe('the next thing that broke');
+    expect(state.result).toBeNull();
+  });
+
+  it('never overwrites a report mid-flight or already on screen', () => {
+    for (const busy of [atDraft(), run([{ type: 'submit' }], atDraft())]) {
+      expect(run([{ type: 'recovered', result }], busy).stage).toBe(busy.stage);
+    }
+  });
+});

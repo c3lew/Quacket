@@ -102,7 +102,12 @@ function fakeServices(state: DetectedState = fresh(), extra: Partial<UiServices>
       url: 'https://github.com/c3lew/Quacket/issues/7',
       issueNumber: 7,
       filingId: 'fil_1',
+      repo: 'c3lew/Quacket',
+      target: { kind: 'new-issue' as const },
+      title: refined().title,
     })),
+    /** Nothing was interrupted — a first run has no history to recover. */
+    recover: vi.fn(() => ({ async *[Symbol.asyncIterator]() {} })),
     loadDraft: vi.fn(async (): Promise<Draft | null> => null),
     saveDraft: vi.fn(async () => {}),
     attachImage: vi.fn(async () => {}),

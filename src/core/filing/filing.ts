@@ -54,6 +54,7 @@ import { readDraftDir, type DraftStore } from '../drafts/store.ts';
 import { joinPath, type FileStore } from '../files.ts';
 import { createGh, GitHubError, lastLine, parseJson, type GitHubErrorKind } from '../github/gh.ts';
 import type { ProcessRunner } from '../runner.ts';
+import { findFiling } from './lookup.ts';
 import {
   imageRefPattern,
   type Draft,
@@ -67,9 +68,23 @@ import {
 
 // ── The interface ───────────────────────────────────────────────────────────
 
-/** What a terminal Filing resolved to. Durable before the caller ever sees it. */
+/**
+ * What a terminal Filing resolved to. Durable before the caller ever sees it.
+ *
+ * It carries the facts a Done screen is built from — where the report went, what
+ * it was called, whether it became an issue or a comment — and not because the
+ * caller could not look them up: after a crash there is nowhere left to look.
+ * The workspace holding the report is deleted the moment cleanup succeeds, so a
+ * receipt that only said "issue 42" would restore a Done screen with no title,
+ * no repo and no link. A recovered success has to read exactly like a live one,
+ * and that is only possible if the receipt is self-sufficient.
+ */
 export interface FilingReceipt extends SubmitResult {
   filingId: string;
+  repo: string;
+  target: SubmitTarget;
+  /** The filed title. Empty only if the frozen report was unreadable by then. */
+  title: string;
 }
 
 /**
@@ -119,6 +134,29 @@ interface AssetReceipt {
 export type FilingCommand =
   | { kind: 'new'; draft: Draft; repo: Repo; decision: FilingDecision }
   | { kind: 'resume'; filingId: string; decision: FilingDecision };
+
+/**
+ * What recovery has to say about one interrupted Filing, in the caller's terms.
+ *
+ * Four states and no fifth, because the palette has to be able to say exactly
+ * one true sentence about a report it did not finish filing:
+ *
+ *   checking  we are asking GitHub right now.
+ *   filed     it is on GitHub. Here is the receipt; it is over.
+ *   pending   we do not know. NOT a failure, and never a Retry — offering one
+ *             while duplicate safety is unknown is how a report gets filed twice.
+ *   failed    we know nothing was created. Retry is safe.
+ *
+ * Deliberately absent: which endpoint was read, how many pages, which asset
+ * uploaded, whether cleanup ran. Those are how recovery works, not what
+ * happened, and a caller that learned them would end up deciding with them.
+ */
+export type RecoveryEvent =
+  | { state: 'checking'; filingId: string }
+  | { state: 'filed'; filingId: string; receipt: FilingReceipt }
+  /** Plain language, shown as-is: why we still cannot say. */
+  | { state: 'pending'; filingId: string; message: string }
+  | { state: 'failed'; filingId: string; kind: GitHubErrorKind; message: string };
 
 /**
  * A PRE-terminal failure. It carries the Filing id, because the only safe way to
@@ -177,8 +215,21 @@ interface Snapshot {
    * A LOCAL failure, kept apart from `lastFailure` on purpose. Squeezing a
    * failed `remove` into a `GitHubErrorKind` would make one field mean two
    * unrelated things, and make a disk problem read as a GitHub one.
+   *
+   * `at` and `attempts` are here because the message alone could not answer the
+   * two questions a stuck cleanup actually raises (#33): when did this start,
+   * and is it still happening? `updatedAt` cannot stand in — every write moves
+   * it, so it cannot tell the first failure from the fifth.
    */
-  cleanupFailure?: { message: string };
+  cleanupFailure?: { message: string; at: string; attempts: number };
+  /**
+   * The last time reconciliation asked GitHub about this Filing and could not
+   * get an answer. A third failure field rather than a reused one for the same
+   * reason as the second: a lookup we could not complete is neither a create
+   * that failed nor a `remove` that failed, and a pending Filing that has been
+   * unreachable for a week should say so from disk alone.
+   */
+  lastCheck?: { message: string; at: string };
 }
 
 type FiledSnapshot = Snapshot & { receipt: FilingReceipt };
@@ -281,6 +332,9 @@ const asFilingError =
   };
 
 const UNKNOWN_FAILURE = 'Could not file this report.';
+
+/** A workspace whose own record will not open. It stays; we cannot judge it. */
+const UNREADABLE = 'Could not read this report on this computer.';
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : UNKNOWN_FAILURE;
@@ -768,7 +822,13 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       assets,
       state: 'filed',
       updatedAt: stamp(),
-      receipt: { ...result, filingId: snapshot.id },
+      receipt: {
+        ...result,
+        filingId: snapshot.id,
+        repo: snapshot.repo,
+        target: snapshot.target,
+        title: refined.title,
+      },
     };
     earned.set(snapshot.id, filed.receipt);
     /*
@@ -781,10 +841,10 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
      * again] that files it a second time — the one failure the whole module
      * exists to prevent.
      *
-     * ponytail: what is lost is the memory across a restart — a snapshot left
-     * saying `filing` with no receipt. Nothing resumes a Filing on its own
-     * today, so it is inert; asking GitHub whether this identity is already
-     * there is reconciliation's job (#24), and it reads the same marker.
+     * What is lost is the memory across a restart — a snapshot left saying
+     * `filing` with no receipt. That is exactly the state `recover` below is
+     * for: the next launch asks GitHub whether this identity is already there,
+     * reading the same marker this attempt wrote into the body.
      */
     await record(filed);
     return filed;
@@ -810,33 +870,173 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
         ...filed,
         updatedAt: stamp(),
         cleanup: 'pending',
-        cleanupFailure: { message: messageOf(error) },
+        cleanupFailure: {
+          message: messageOf(error),
+          // The FIRST failure's time, kept across retries: "stuck since Tuesday"
+          // is the diagnosis, and overwriting it every startup would erase it.
+          at: filed.cleanupFailure?.at ?? stamp(),
+          attempts: (filed.cleanupFailure?.attempts ?? 0) + 1,
+        },
       });
     }
   };
 
-  return {
-    /**
-     * Files a report, or finishes filing one. Resolves with the receipt for a
-     * report GitHub has accepted; rejects only with an error that is safe to act
-     * on — a `FilingError` naming the Filing to resume, or, from `begin`, a
-     * `GitHubError` for a Filing that never came into existence.
-     *
-     * "Safe to act on" is what the wrapper below buys, and it is not a formality:
-     * the app reads `filingId` off the error to decide whether [Try again]
-     * RESUMES this Filing or starts a new one, and shows the message verbatim.
-     * An untyped error that escaped here would take the id with it — and a
-     * [Try again] with no id files the report a second time.
-     */
-    async file(command: FilingCommand): Promise<FilingReceipt> {
-      const snapshot =
-        command.kind === 'new'
-          ? await begin(command.draft, command.repo)
-          : await loadSnapshot(command.filingId).catch(asFilingError(command.filingId));
+  /**
+   * Files a report, or finishes filing one. Resolves with the receipt for a
+   * report GitHub has accepted; rejects only with an error that is safe to act
+   * on — a `FilingError` naming the Filing to resume, or, from `begin`, a
+   * `GitHubError` for a Filing that never came into existence.
+   *
+   * "Safe to act on" is what `asFilingError` buys, and it is not a formality:
+   * the app reads `filingId` off the error to decide whether [Try again]
+   * RESUMES this Filing or starts a new one, and shows the message verbatim. An
+   * untyped error that escaped here would take the id with it — and a [Try
+   * again] with no id files the report a second time.
+   *
+   * `recover` calls this directly, to resume a Filing GitHub has provably never
+   * seen.
+   */
+  const file = async (command: FilingCommand): Promise<FilingReceipt> => {
+    const snapshot =
+      command.kind === 'new'
+        ? await begin(command.draft, command.repo)
+        : await loadSnapshot(command.filingId).catch(asFilingError(command.filingId));
 
-      const filed = await attempt(snapshot, command.decision).catch(asFilingError(snapshot.id));
+    const filed = await attempt(snapshot, command.decision).catch(asFilingError(snapshot.id));
+    await cleanup(filed);
+    return filed.receipt;
+  };
+
+  // ── Recovery ──────────────────────────────────────────────────────────────
+
+  /** The title the frozen report was filed under, for a receipt rebuilt from GitHub. */
+  const frozenTitle = async (id: string): Promise<string> => {
+    try {
+      return (await readDraftDir(files, draftDir(id)))?.refined?.title ?? '';
+    } catch {
+      return '';
+    }
+  };
+
+  /**
+   * Everything one interrupted Filing can turn into, as a stream of one to three
+   * events. Split out of the generator so the walk over the workspaces stays
+   * readable, and so the fixed matrix below is one function you can read top to
+   * bottom.
+   */
+  const reconcile = async function* (id: string): AsyncGenerator<RecoveryEvent> {
+    let snapshot: Snapshot;
+    try {
+      snapshot = await loadSnapshot(id);
+    } catch {
+      // Unreadable is not absent, and not failed either: this workspace may hold
+      // a report GitHub already has, and nothing here can tell. It stays exactly
+      // where it is, and says so.
+      yield { state: 'pending', filingId: id, message: UNREADABLE };
+      return;
+    }
+
+    /*
+     * Already terminal. This is the cleanup queue draining: the receipt is the
+     * answer, GitHub is not asked anything, and the workspace goes away.
+     */
+    const done = snapshot.receipt ?? earned.get(id);
+    if (done !== undefined) {
+      yield { state: 'filed', filingId: id, receipt: done };
+      await cleanup({ ...snapshot, state: 'filed', receipt: done });
+      return;
+    }
+
+    yield { state: 'checking', filingId: id };
+    const found = await findFiling(gh, snapshot.repo, snapshot.target, filingMarker(id));
+
+    if (found.kind === 'inconclusive') {
+      await record({
+        ...snapshot,
+        updatedAt: stamp(),
+        lastCheck: { message: found.message, at: stamp() },
+      });
+      yield { state: 'pending', filingId: id, message: found.message };
+      return;
+    }
+
+    if (found.kind === 'match') {
+      // The report is on GitHub, and this is the receipt it never got to write.
+      // No create call is made — this path exists precisely to not make one.
+      const receipt: FilingReceipt = {
+        url: found.url,
+        issueNumber: found.issueNumber,
+        filingId: id,
+        repo: snapshot.repo,
+        target: snapshot.target,
+        title: await frozenTitle(id),
+      };
+      const filed: FiledSnapshot = { ...snapshot, state: 'filed', updatedAt: stamp(), receipt };
+      earned.set(id, receipt);
+      await record(filed);
+      yield { state: 'filed', filingId: id, receipt };
       await cleanup(filed);
-      return filed.receipt;
+      return;
+    }
+
+    /*
+     * An authoritative no-match: GitHub was listed to the end and this identity
+     * is not there. The user already pressed Submit, so finishing what they
+     * asked for needs no second decision — and because the marker is absent,
+     * this create is the first one, not a duplicate.
+     */
+    try {
+      const receipt = await file({ kind: 'resume', filingId: id, decision: 'as-captured' });
+      yield { state: 'filed', filingId: id, receipt };
+    } catch (error) {
+      /*
+       * The fixed matrix, and the only place `failed` is emitted.
+       *
+       * `upload_failed` is durable evidence: uploads run strictly before the
+       * create, so a Filing that died there never asked GitHub to create
+       * anything — and the lookup above just proved nothing was there before.
+       * Retry is safe, and the caller may offer it.
+       *
+       * Everything else — including a create that timed out — leaves the remote
+       * outcome unknown all over again, so the Filing goes back to `pending`
+       * and the next startup asks GitHub rather than the user.
+       */
+      const kind = error instanceof FilingError ? error.kind : 'create_failed';
+      const message = messageOf(error);
+      yield kind === 'upload_failed'
+        ? { state: 'failed', filingId: id, kind, message }
+        : { state: 'pending', filingId: id, message };
+    }
+  };
+
+  // Two verbs, and deliberately no third: `file` for a report the user is
+  // filing now, `recover` for the ones a previous run did not finish.
+  return {
+    file,
+
+    /**
+     * Every interrupted Filing on this computer, walked once and reported as it
+     * resolves.
+     *
+     * A STREAM rather than a summary, because the slow part is GitHub and the
+     * caller has a window to keep usable: it renders `checking` while a lookup
+     * is in flight and replaces it the moment there is an answer, instead of
+     * waiting for the whole pass. Nothing here is awaited by capture — the
+     * caller iterates on its own — so a GitHub that never responds costs a
+     * status line, not a capture box.
+     *
+     * It never rejects. Every expected failure — offline, signed out, rate
+     * limited, a half-read listing, a resume that failed again — is an EVENT,
+     * because a throw would take the rest of the queue down with it and turn a
+     * network blip into an app that cannot start.
+     */
+    async *recover(): AsyncGenerator<RecoveryEvent> {
+      // No folder, or a folder we cannot read: nothing to recover, and nothing
+      // worth reporting — there is no Filing here to be uncertain about.
+      const ids = await files.list(root).catch(() => null);
+      for (const id of ids ?? []) {
+        yield* reconcile(id);
+      }
     },
   };
 }
