@@ -1,0 +1,736 @@
+/**
+ * THROWAWAY QA harness for issue #28 — startup reconciliation.
+ *
+ * Not a regression test: vitest is only the runner. Everything below drives the
+ * production `createFiling` against REAL `gh`, a REAL private repo
+ * (c3lew/quacket-qa-target) and a REAL disk. Faults are injected at exactly two
+ * seams — one `gh` call, or one FileStore method — so every other step is the
+ * shipped path.
+ *
+ * Delete after the run.
+ */
+
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+import { DraftStore } from './core/drafts/store.ts';
+import { joinPath, type FileStore } from './core/files.ts';
+import { nodeFiles } from './core/testing/node-files.ts';
+import type { ProcessRunner, ProcResult, ProcSpec } from './core/runner.ts';
+import type { Draft, ImageAttachment, Repo, SubmitTarget } from './core/types.ts';
+import {
+  createFiling,
+  filingMarker,
+  type Filing,
+  type RecoveryEvent,
+} from './core/filing/filing.ts';
+
+const GH = 'C:\\Program Files\\GitHub CLI\\gh.exe';
+const REPO: Repo = { nameWithOwner: 'c3lew/quacket-qa-target', isPrivate: true };
+/** An existing issue in the QA repo, used as the host for comment targets. */
+const COMMENT_HOST = 37;
+const RUN = Date.now();
+
+// ── The real process seam ───────────────────────────────────────────────────
+
+const realRunner: ProcessRunner = {
+  run: (spec: ProcSpec) =>
+    new Promise<ProcResult>((resolve) => {
+      const child = spawn(spec.cmd === 'gh' ? GH : spec.cmd, spec.args, { shell: false });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => (stdout += String(d)));
+      child.stderr.on('data', (d) => (stderr += String(d)));
+      child.stdin.end(spec.stdin ?? '');
+      child.on('close', (code) => resolve({ exitCode: code, stdout, stderr, timedOut: false }));
+      child.on('error', (e) =>
+        resolve({ exitCode: 127, stdout: '', stderr: String(e), timedOut: false }),
+      );
+    }),
+  session: () => {
+    throw new Error('not used by filing');
+  },
+};
+
+interface Fault {
+  when: (args: string[]) => boolean;
+  result?: ProcResult;
+  /** Never resolves — a GitHub that has stopped answering. */
+  hang?: boolean;
+}
+
+const ok = (stdout: string): ProcResult => ({ exitCode: 0, stdout, stderr: '', timedOut: false });
+const fail = (stderr: string, stdout = ''): ProcResult => ({
+  exitCode: 1,
+  stdout,
+  stderr,
+  timedOut: false,
+});
+
+// ── Read-back against ground truth ──────────────────────────────────────────
+
+const ghJson = async <T>(path: string): Promise<T> => {
+  const r = await realRunner.run({ cmd: 'gh', args: ['api', path] });
+  if (r.exitCode !== 0) throw new Error(`gh api ${path} failed: ${r.stderr}`);
+  return JSON.parse(r.stdout) as T;
+};
+
+interface RemoteRow {
+  number?: number;
+  html_url?: string;
+  body?: string | null;
+}
+
+/**
+ * GitHub's list endpoints are served from a replica that can lag a create by a
+ * second or two, so a read-back that expects to FIND something polls. A
+ * read-back that expects to find nothing is read once — the lag can only hide a
+ * report, never invent one.
+ */
+const settle = async (
+  read: () => Promise<RemoteRow[]>,
+  expected: number,
+): Promise<RemoteRow[]> => {
+  let rows = await read();
+  for (let i = 0; i < 10 && rows.length < expected; i += 1) {
+    await new Promise((r) => setTimeout(r, 1500));
+    rows = await read();
+  }
+  return rows;
+};
+
+/** Every issue in the QA repo whose body carries this Filing's hidden identity. */
+const remoteIssues = async (id: string, expect = 0): Promise<RemoteRow[]> =>
+  settle(async () => {
+    const rows = await ghJson<RemoteRow[]>(
+      `repos/${REPO.nameWithOwner}/issues?state=all&per_page=100`,
+    );
+    return rows.filter((r) => (r.body ?? '').includes(filingMarker(id)));
+  }, expect);
+
+const remoteComments = async (id: string, expect = 0): Promise<RemoteRow[]> =>
+  settle(async () => {
+    const rows = await ghJson<RemoteRow[]>(
+      `repos/${REPO.nameWithOwner}/issues/${COMMENT_HOST}/comments?per_page=100`,
+    );
+    return rows.filter((r) => (r.body ?? '').includes(filingMarker(id)));
+  }, expect);
+
+const filed: number[] = [];
+
+// ── Harness ─────────────────────────────────────────────────────────────────
+
+const image = (): ImageAttachment => ({
+  id: 'img_1',
+  bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+  mediaType: 'image/png',
+  annotated: false,
+});
+
+const draftFor = (title: string, over: Partial<Draft> = {}): Draft => ({
+  id: 'draft_1',
+  repo: REPO.nameWithOwner,
+  raw: 'qa 28',
+  images: [],
+  refined: {
+    type: 'bug',
+    title,
+    sections: [{ heading: 'Actual', body: 'Filed by the #28 QA harness.' }],
+    followUps: [],
+    similarIssues: [],
+  },
+  target: { kind: 'new-issue' },
+  ...over,
+});
+
+interface Ctx {
+  dir: string;
+  /** Every argv handed to `gh`, in order. */
+  calls: string[][];
+  faults: Fault[];
+  /** A fresh Filing over the same disk: exactly what the next launch sees. */
+  launch: (files?: FileStore) => Filing;
+  snapshot: (id: string) => Promise<Record<string, unknown> | null>;
+  filings: () => Promise<string[]>;
+  save: (draft: Draft, files?: FileStore) => Promise<void>;
+}
+
+const withCtx = async (id: string, run: (c: Ctx) => Promise<void>): Promise<void> => {
+  const dir = await mkdtemp(join(tmpdir(), 'quacket-qa28-'));
+  const calls: string[][] = [];
+  const faults: Fault[] = [];
+  // The Filing under test is the first one; any later capture gets its own id.
+  const ids = [id, `${id}_b`, `${id}_c`];
+  const runner: ProcessRunner = {
+    run: async (spec) => {
+      calls.push(spec.args);
+      const fault = faults.find((f) => f.when(spec.args));
+      if (fault?.hang === true) return new Promise<ProcResult>(() => {});
+      if (fault?.result !== undefined) return fault.result;
+      return realRunner.run(spec);
+    },
+    session: realRunner.session,
+  };
+  try {
+    await run({
+      dir,
+      calls,
+      faults,
+      launch: (files = nodeFiles) =>
+        createFiling({
+          runner,
+          files,
+          drafts: new DraftStore(dir, files),
+          baseDir: dir,
+          newId: () => ids.shift() ?? `${id}_overflow`,
+        }),
+      snapshot: async (fid) => {
+        const text = await nodeFiles.readText(joinPath(dir, 'filings', fid, 'filing.json'));
+        return text === null ? null : (JSON.parse(text) as Record<string, unknown>);
+      },
+      filings: async () => (await nodeFiles.list(joinPath(dir, 'filings'))) ?? [],
+      save: async (draft, files = nodeFiles) => {
+        const store = new DraftStore(dir, files);
+        await store.save(draft);
+        for (const img of draft.images) await store.attachImage(draft, img);
+      },
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/** `nodeFiles` with one method rigged to fail on a predicate. */
+const breaking = (
+  op: 'writeText' | 'remove',
+  when: (path: string, payload?: string) => boolean,
+): FileStore => ({
+  ...nodeFiles,
+  [op]: async (path: string, ...rest: unknown[]) => {
+    if (when(path, rest[0] as string | undefined)) throw new Error(`injected ${op} failure`);
+    return (nodeFiles[op] as (...a: unknown[]) => unknown)(path, ...rest);
+  },
+});
+
+/**
+ * The crash this whole ticket is about, modelled at the disk: GitHub has
+ * accepted the report, and NOTHING durable happens afterwards — the receipt
+ * write does not land and the workspace is not removed, exactly as if the
+ * process died between the two. What is left on disk says `filing`.
+ */
+const crashAfterAccept: FileStore = {
+  ...nodeFiles,
+  writeText: async (path, text) => {
+    if (text.includes('"receipt"')) throw new Error('injected crash: receipt write lost');
+    return nodeFiles.writeText(path, text);
+  },
+  remove: async (path) => {
+    if (path.includes('filings')) throw new Error('injected crash: process is gone');
+    return nodeFiles.remove(path);
+  },
+};
+
+const drain = async (filing: Filing): Promise<RecoveryEvent[]> => {
+  const events: RecoveryEvent[] = [];
+  for await (const event of filing.recover()) events.push(event);
+  return events;
+};
+
+const creates = (calls: string[][]): string[][] =>
+  calls.filter((a) => a.includes('create') || a.includes('comment') || a.includes('--method'));
+
+const log = (label: string, value: unknown): void => {
+  console.log(`\n[QA28] ${label}\n${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}`);
+};
+
+const TIMEOUT = 240_000;
+
+// ── S1 — GitHub accepted it, the receipt write was lost (stories 6, 10, 30) ──
+
+describe('S1 receipt-write crash', () => {
+  /**
+   * Same crash, twice, differing only in how long the user takes to relaunch.
+   * GitHub's issue listing is served from a replica that lags a create, so the
+   * delay is the whole experiment: if reconciliation is honest, both runs end
+   * with ONE report on GitHub.
+   */
+  for (const relaunchAfterMs of [0, 20_000]) {
+    it(
+      `resolves to filed with no second create — new issue, relaunched after ${relaunchAfterMs}ms`,
+      async () => {
+        const id = `fil_qa28_s1_${relaunchAfterMs}_${RUN}`;
+        await withCtx(id, async (c) => {
+          const title = `QA28 S1 issue ${relaunchAfterMs} ${RUN}`;
+          await c.save(draftFor(title), crashAfterAccept);
+          const live = await c.launch(crashAfterAccept).file({
+            kind: 'new',
+            draft: draftFor(title),
+            repo: REPO,
+            decision: 'as-captured',
+          });
+          filed.push(live.issueNumber);
+
+          const crashed = await c.snapshot(id);
+          expect(crashed?.state).toBe('filing');
+          expect(crashed?.receipt).toBeUndefined();
+          log('S1 disk after the crash', {
+            relaunchAfterMs,
+            acceptedAs: live.url,
+            state: crashed?.state,
+            receipt: crashed?.receipt ?? null,
+          });
+
+          if (relaunchAfterMs > 0) await new Promise((r) => setTimeout(r, relaunchAfterMs));
+
+          // The next launch: nothing in memory survives.
+          const before = c.calls.length;
+          const events = await drain(c.launch());
+          const recoveryCalls = c.calls.slice(before);
+          log('S1 recovery events', { relaunchAfterMs, events });
+          log('S1 gh calls made during recovery', recoveryCalls.map((a) => a.join(' ')));
+
+          const remote = await remoteIssues(id, 1);
+          log('S1 issues on GitHub carrying this identity', {
+            relaunchAfterMs,
+            urls: remote.map((r) => r.html_url),
+          });
+
+          expect(events.map((e) => e.state)).toEqual(['checking', 'filed']);
+          const done = events[1];
+          if (done?.state !== 'filed') throw new Error('not filed');
+          expect(creates(recoveryCalls)).toEqual([]);
+          expect(remote).toHaveLength(1);
+          expect(done.receipt.url).toBe(live.url);
+          expect(done.receipt.issueNumber).toBe(live.issueNumber);
+          expect(done.receipt.repo).toBe(REPO.nameWithOwner);
+          expect(done.receipt.title).toBe(title);
+          expect(await c.filings()).toEqual([]);
+        });
+      },
+      TIMEOUT,
+    );
+  }
+
+  it(
+    'resolves to filed on the next run with no second create — comment',
+    async () => {
+      const id = `fil_qa28_s1c_${RUN}`;
+      const target: SubmitTarget = { kind: 'comment', issueNumber: COMMENT_HOST };
+      await withCtx(id, async (c) => {
+        const lossy = crashAfterAccept;
+        const d = draftFor(`QA28 S1 comment ${RUN}`, { target });
+        await c.save(d, lossy);
+        const live = await c
+          .launch(lossy)
+          .file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' });
+
+        expect((await c.snapshot(id))?.receipt).toBeUndefined();
+
+        const before = c.calls.length;
+        const events = await drain(c.launch());
+        const recoveryCalls = c.calls.slice(before);
+        log('S1c recovery events', events);
+        log('S1c gh calls during recovery', recoveryCalls.map((a) => a.join(' ')));
+
+        expect(events.map((e) => e.state)).toEqual(['checking', 'filed']);
+        const done = events[1];
+        if (done?.state !== 'filed') throw new Error('not filed');
+        expect(done.receipt.url).toBe(live.url);
+        expect(done.receipt.issueNumber).toBe(COMMENT_HOST);
+        expect(done.receipt.target).toEqual(target);
+        expect(creates(recoveryCalls)).toEqual([]);
+
+        const remote = await remoteComments(id, 1);
+        log('S1c comments on GitHub carrying this identity', remote.map((r) => r.html_url));
+        expect(remote).toHaveLength(1);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S2 — authoritative no-match resumes the same Filing (stories 9, 11) ──────
+
+describe('S2 authoritative no-match', () => {
+  it(
+    'resumes the same Filing and creates exactly one remote report',
+    async () => {
+      const id = `fil_qa28_s2_${RUN}`;
+      await withCtx(id, async (c) => {
+        const d = draftFor(`QA28 S2 no-match ${RUN}`);
+        await c.save(d);
+        // The create never reaches GitHub: a crash on the way out.
+        c.faults.push({
+          when: (a) => a.includes('issue') && a.includes('create'),
+          result: fail('gh: connection reset'),
+        });
+        await expect(
+          c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+        ).rejects.toThrow();
+        expect(await remoteIssues(id)).toHaveLength(0);
+
+        c.faults.length = 0;
+        const before = c.calls.length;
+        const events = await drain(c.launch());
+        const recoveryCalls = c.calls.slice(before);
+        log('S2 recovery events', events);
+        log('S2 gh calls during recovery', recoveryCalls.map((a) => a.join(' ')));
+
+        expect(events.map((e) => e.state)).toEqual(['checking', 'filed']);
+        const done = events[1];
+        if (done?.state !== 'filed') throw new Error('not filed');
+        filed.push(done.receipt.issueNumber);
+        expect(done.receipt.filingId).toBe(id);
+
+        const remote = await remoteIssues(id, 1);
+        log('S2 issues on GitHub carrying this identity', remote.map((r) => r.html_url));
+        expect(remote).toHaveLength(1);
+        expect(remote[0]?.html_url).toBe(done.receipt.url);
+        expect(creates(recoveryCalls).filter((a) => a.includes('create'))).toHaveLength(1);
+        expect(await c.filings()).toEqual([]);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S3 — every unavailable lookup is pending, never a create (stories 12, 27) ─
+
+describe('S3 inconclusive lookups', () => {
+  const page = (n: number): string =>
+    JSON.stringify(
+      Array.from({ length: n }, (_, i) => ({
+        number: 1000 + i,
+        html_url: 'https://example.invalid/x',
+        body: 'unrelated',
+      })),
+    );
+
+  const cases: Array<{ name: string; fault: Fault }> = [
+    {
+      name: 'offline',
+      fault: {
+        when: (a) => a[0] === 'api',
+        result: fail('dial tcp: lookup api.github.com: no such host'),
+      },
+    },
+    {
+      name: 'not authenticated',
+      fault: {
+        when: (a) => a[0] === 'api',
+        result: fail('gh: To get started with GitHub CLI, please run: gh auth login (HTTP 401)'),
+      },
+    },
+    {
+      name: 'rate limited',
+      fault: {
+        when: (a) => a.some((x) => x.startsWith('repos/')),
+        result: fail('gh: API rate limit exceeded (HTTP 403)'),
+      },
+    },
+    {
+      name: 'malformed page',
+      fault: {
+        when: (a) => a.some((x) => x.startsWith('repos/')),
+        result: ok('{"message": not json at all'),
+      },
+    },
+    {
+      name: 'empty stdout, exit 0',
+      fault: { when: (a) => a.some((x) => x.startsWith('repos/')), result: ok('') },
+    },
+    {
+      name: 'interrupted pagination',
+      fault: {
+        when: (a) => a.some((x) => x.endsWith('&page=2')),
+        result: fail('gh: connection reset mid-listing'),
+      },
+    },
+  ];
+
+  for (const { name, fault } of cases) {
+    it(
+      `${name} stays pending, creates nothing, and leaves the report on disk`,
+      async () => {
+        const id = `fil_qa28_s3_${name.replace(/\W+/g, '')}_${RUN}`;
+        await withCtx(id, async (c) => {
+          const d = draftFor(`QA28 S3 ${name} ${RUN}`);
+          await c.save(d);
+          c.faults.push({
+            when: (a) => a.includes('issue') && a.includes('create'),
+            result: fail('gh: connection reset'),
+          });
+          await expect(
+            c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+          ).rejects.toThrow();
+          c.faults.length = 0;
+
+          if (name === 'interrupted pagination') {
+            // A full first page, so the walk MUST ask for a second one.
+            c.faults.push({
+              when: (a) => a.some((x) => x.endsWith('&page=1')),
+              result: ok(page(100)),
+            });
+          }
+          c.faults.push(fault);
+
+          const before = c.calls.length;
+          const events = await drain(c.launch());
+          const recoveryCalls = c.calls.slice(before);
+          log(`S3 ${name} events`, events);
+          log(`S3 ${name} gh calls`, recoveryCalls.map((a) => a.join(' ')));
+
+          expect(events.map((e) => e.state)).toEqual(['checking', 'pending']);
+          expect(creates(recoveryCalls)).toEqual([]);
+          expect(await remoteIssues(id)).toHaveLength(0);
+
+          // The report is still there, and disk alone says why.
+          const snap = await c.snapshot(id);
+          expect(snap?.receipt).toBeUndefined();
+          expect(snap?.state).not.toBe('filed');
+          log(`S3 ${name} lastCheck on disk`, snap?.lastCheck);
+          expect(snap?.lastCheck).toBeTruthy();
+
+          // ...and a new report can still be captured and filed right now.
+          const next = draftFor(`QA28 S3 ${name} next draft ${RUN}`, { id: 'draft_2' });
+          await c.save(next);
+          c.faults.length = 0;
+          const receipt = await c
+            .launch()
+            .file({ kind: 'new', draft: next, repo: REPO, decision: 'as-captured' });
+          filed.push(receipt.issueNumber);
+          log(`S3 ${name} a new report filed while the old one is pending`, receipt.url);
+          expect(receipt.issueNumber).toBeGreaterThan(0);
+        });
+      },
+      TIMEOUT,
+    );
+  }
+});
+
+// ── S4 — failed only on durable evidence (story 27, AC 5 and 6) ─────────────
+
+describe('S4 the failed/pending boundary', () => {
+  it(
+    'a resumed Filing that dies on the upload leg is failed, and nothing was created',
+    async () => {
+      const id = `fil_qa28_s4_${RUN}`;
+      await withCtx(id, async (c) => {
+        const d = draftFor(`QA28 S4 upload ${RUN}`, {
+          images: [image()],
+          refined: {
+            type: 'bug',
+            title: `QA28 S4 upload ${RUN}`,
+            sections: [{ heading: 'Actual', body: 'shot: ![s](quacket-image:img_1)' }],
+            followUps: [],
+            similarIssues: [],
+          },
+        });
+        await c.save(d);
+        c.faults.push({
+          when: (a) => a.includes('--method') && a.includes('PUT'),
+          result: fail('gh: upload rejected (HTTP 422)'),
+        });
+        await expect(
+          c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+        ).rejects.toThrow();
+
+        const before = c.calls.length;
+        const events = await drain(c.launch());
+        log('S4 recovery events', events);
+        log('S4 gh calls during recovery', c.calls.slice(before).map((a) => a.join(' ')));
+
+        expect(events.map((e) => e.state)).toEqual(['checking', 'failed']);
+        const last = events[1];
+        if (last?.state !== 'failed') throw new Error('not failed');
+        expect(last.kind).toBe('upload_failed');
+        expect(await remoteIssues(id)).toHaveLength(0);
+      });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'a resumed create that loses its outcome goes back to pending, not failed',
+    async () => {
+      const id = `fil_qa28_s5_${RUN}`;
+      await withCtx(id, async (c) => {
+        const d = draftFor(`QA28 S5 lost again ${RUN}`);
+        await c.save(d);
+        c.faults.push({
+          when: (a) => a.includes('issue') && a.includes('create'),
+          result: fail('gh: connection reset'),
+        });
+        await expect(
+          c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+        ).rejects.toThrow();
+
+        // The resumed create times out: GitHub may or may not have taken it.
+        c.faults.length = 0;
+        c.faults.push({
+          when: (a) => a.includes('issue') && a.includes('create'),
+          result: { exitCode: null, stdout: '', stderr: '', timedOut: true },
+        });
+        const events = await drain(c.launch());
+        log('S5 recovery events', events);
+
+        expect(events.map((e) => e.state)).toEqual(['checking', 'pending']);
+        const snap = await c.snapshot(id);
+        expect(snap?.receipt).toBeUndefined();
+        log('S5 the Filing is still on disk for the next launch', {
+          state: snap?.state,
+          lastFailure: snap?.lastFailure,
+        });
+
+        /*
+         * And what the launch after THAT does with it, which is the question the
+         * snapshot's own `state` field raises: does a Filing recorded as `failed`
+         * get retried blind, or asked about again?
+         */
+        c.faults.length = 0;
+        c.faults.push({
+          when: (a) => a.some((x) => x.startsWith('repos/')),
+          result: fail('gh: API rate limit exceeded (HTTP 403)'),
+        });
+        const nextBoot = await drain(c.launch());
+        log('S5 the launch after that, with GitHub unavailable', nextBoot);
+        expect(nextBoot.map((e) => e.state)).toEqual(['checking', 'pending']);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S6 — a durable receipt restores Done, and cleanup drains (stories 30, 31) ─
+
+describe('S6 receipt and cleanup queue', () => {
+  it(
+    'restores the receipt across a restart with no GitHub call at all, and drains the workspace',
+    async () => {
+      const id = `fil_qa28_s6_${RUN}`;
+      await withCtx(id, async (c) => {
+        const stuck = breaking('remove', (p) => p.includes('filings'));
+        const d = draftFor(`QA28 S6 stuck cleanup ${RUN}`);
+        await c.save(d, stuck);
+        const live = await c
+          .launch(stuck)
+          .file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' });
+        filed.push(live.issueNumber);
+
+        const first = await c.snapshot(id);
+        log('S6 snapshot after a failed cleanup', {
+          state: first?.state,
+          cleanup: first?.cleanup,
+          cleanupFailure: first?.cleanupFailure,
+        });
+        expect(first?.state).toBe('filed');
+        expect(first?.cleanup).toBe('pending');
+        const failure = first?.cleanupFailure as { at: string; attempts: number };
+        expect(failure.attempts).toBe(1);
+
+        // A restart where the disk is STILL broken: the diagnosis has to accrue.
+        const stillStuck = await drain(c.launch(stuck));
+        const second = (await c.snapshot(id))?.cleanupFailure as { at: string; attempts: number };
+        log('S6 second launch, cleanup still broken', { events: stillStuck, cleanupFailure: second });
+        expect(stillStuck.map((e) => e.state)).toEqual(['filed']);
+        expect(second.attempts).toBe(2);
+        expect(second.at).toBe(failure.at);
+
+        // A restart where it is not: no GitHub call, and the debris goes away.
+        const before = c.calls.length;
+        const events = await drain(c.launch());
+        const recoveryCalls = c.calls.slice(before);
+        log('S6 final launch events', events);
+        log('S6 gh calls during that launch', recoveryCalls.map((a) => a.join(' ')));
+
+        expect(events.map((e) => e.state)).toEqual(['filed']);
+        const done = events[0];
+        if (done?.state !== 'filed') throw new Error('not filed');
+        expect(done.receipt.url).toBe(live.url);
+        expect(done.receipt.title).toBe(`QA28 S6 stuck cleanup ${RUN}`);
+        expect(recoveryCalls).toEqual([]);
+        expect(await c.filings()).toEqual([]);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S7 — recovery never blocks capture (stories 28, 29) ─────────────────────
+
+describe('S7 recovery is not in the way', () => {
+  it(
+    'a GitHub that never answers costs a status, not a capture',
+    async () => {
+      const id = `fil_qa28_s7_${RUN}`;
+      await withCtx(id, async (c) => {
+        const d = draftFor(`QA28 S7 hang ${RUN}`);
+        await c.save(d);
+        c.faults.push({
+          when: (a) => a.includes('issue') && a.includes('create'),
+          result: fail('gh: connection reset'),
+        });
+        await expect(
+          c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+        ).rejects.toThrow();
+
+        // Recovery starts and never finishes.
+        c.faults.length = 0;
+        c.faults.push({ when: (a) => a[0] === 'api' && a.some((x) => x.startsWith('repos/')), hang: true });
+        const seen: RecoveryEvent[] = [];
+        let settled = false;
+        void (async () => {
+          for await (const e of c.launch().recover()) seen.push(e);
+          settled = true;
+        })();
+        await new Promise((r) => setImmediate(r));
+
+        // Meanwhile the user captures and files the next report, for real.
+        const next = draftFor(`QA28 S7 captured during a hang ${RUN}`, { id: 'draft_2' });
+        await c.save(next);
+        const started = Date.now();
+        const receipt = await c
+          .launch()
+          .file({ kind: 'new', draft: next, repo: REPO, decision: 'as-captured' });
+        filed.push(receipt.issueNumber);
+
+        log('S7 while recovery hangs', {
+          recoveryEvents: seen.map((e) => e.state),
+          recoveryFinished: settled,
+          filedAnyway: receipt.url,
+          tookMs: Date.now() - started,
+        });
+        expect(seen.map((e) => e.state)).toEqual(['checking']);
+        expect(settled).toBe(false);
+        expect(receipt.issueNumber).toBeGreaterThan(0);
+      });
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'recover() never rejects, even with an unreadable workspace',
+    async () => {
+      const id = `fil_qa28_s8_${RUN}`;
+      await withCtx(id, async (c) => {
+        await nodeFiles.mkdirp(joinPath(c.dir, 'filings', id));
+        await nodeFiles.writeText(joinPath(c.dir, 'filings', id, 'filing.json'), '{ torn');
+        const events = await drain(c.launch());
+        log('S8 unreadable workspace', events);
+        expect(events.map((e) => e.state)).toEqual(['pending']);
+        expect(await c.filings()).toEqual([id]);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+describe('artifacts', () => {
+  it('lists the issues this run filed', () => {
+    log('issues filed by this QA run', filed);
+    expect(true).toBe(true);
+  });
+});

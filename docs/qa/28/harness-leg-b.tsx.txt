@@ -1,0 +1,143 @@
+/**
+ * THROWAWAY QA harness for #28, leg B: the real palette in a real browser.
+ *
+ * Mounts the shipped <App> with a hand-written UiServices. Nothing about the
+ * Tauri shell is involved — App imports nothing host-specific — so what is on
+ * screen is the real component tree reacting to a real `recover()` stream.
+ *
+ * ?case=filed  a report the previous run left behind turns out to be on GitHub
+ * ?case=hang   GitHub never answers the recovery lookup
+ * ?case=typing the same recovery lands while the user is mid-sentence
+ *
+ * Delete after the run.
+ */
+
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from './ui/App.tsx';
+import type { UiServices } from './ui/components/services.ts';
+import type { RecoveryEvent, FilingReceipt } from './core/filing/filing.ts';
+import { DEFAULT_SETTINGS } from './core/types.ts';
+import './ui/styles.css';
+
+const params = new URLSearchParams(location.search);
+const kase = params.get('case') ?? 'filed';
+const delay = Number(params.get('delay') ?? '2500');
+
+const RECEIPT: FilingReceipt = {
+  url: 'https://github.com/c3lew/quacket-qa-target/issues/57',
+  issueNumber: 57,
+  filingId: 'fil_qa28_ui',
+  repo: 'c3lew/quacket-qa-target',
+  target: { kind: 'new-issue' },
+  title: 'Tray icon disappears after unlocking Windows',
+};
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const samples: Array<{ t: number; text: string }> = [];
+(window as unknown as { __samples: typeof samples }).__samples = samples;
+const t0 = Date.now();
+let last = '';
+setInterval(() => {
+  const text = document.body.innerText.replace(/\s+/g, ' ').trim().slice(0, 220);
+  if (text !== last) {
+    last = text;
+    samples.push({ t: Date.now() - t0, text });
+  }
+}, 60);
+
+async function* recover(): AsyncGenerator<RecoveryEvent> {
+  yield { state: 'checking', filingId: RECEIPT.filingId };
+  if (kase === 'hang') {
+    await new Promise<void>(() => {});
+    return;
+  }
+  await wait(delay);
+  if (kase === 'pending') {
+    yield {
+      state: 'pending',
+      filingId: RECEIPT.filingId,
+      message: 'Could not check GitHub for this report.',
+    };
+    return;
+  }
+  if (kase === 'failed') {
+    yield {
+      state: 'failed',
+      filingId: RECEIPT.filingId,
+      kind: 'upload_failed',
+      message: 'Could not upload an image to this repo.',
+    };
+    return;
+  }
+  yield { state: 'filed', filingId: RECEIPT.filingId, receipt: RECEIPT };
+}
+
+const services = {
+  detect: async () => ({
+    gh: { installed: true, authenticated: true },
+    providers: [
+      {
+        provider: 'claude' as const,
+        cliVersion: '2.1.210',
+        account: 'eva8isverygood@gmail.com',
+        models: [{ id: 'sonnet', label: 'Sonnet 5', efforts: ['low', 'medium', 'high'] }],
+      },
+    ],
+    settings: { ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' },
+    autostart: false,
+  }),
+  hotkeyConflict: async () => null,
+  listRepos: async () => [{ nameWithOwner: 'c3lew/quacket-qa-target', isPrivate: true }],
+  listIssues: async () => [],
+  refine: async () => ({
+    draft: {
+      type: 'bug' as const,
+      title: RECEIPT.title,
+      sections: [{ heading: 'Actual', body: 'The icon is gone.' }],
+      followUps: [],
+      similarIssues: [],
+    },
+    thread: { provider: 'claude' as const, sessionId: 's1', dir: '/tmp/x' },
+    candidates: [],
+  }),
+  followUp: async () => ({
+    type: 'bug' as const,
+    title: RECEIPT.title,
+    sections: [{ heading: 'Actual', body: 'The icon is gone.' }],
+    followUps: [],
+    similarIssues: [],
+  }),
+  file: async () => RECEIPT,
+  recover,
+  loadDraft: async () => null,
+  saveDraft: async () => {},
+  attachImage: async () => {},
+  discardDraft: async () => {},
+  loadSettings: async () => ({ ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' }),
+  saveSettings: async () => {},
+  setAutostart: async () => {},
+  applyHotkey: async () => null,
+  notify: async () => {},
+  hide: async () => {},
+  setWidth: async () => {},
+  openUrl: async (url: string) => {
+    (window as unknown as { __opened: string[] }).__opened ??= [];
+    (window as unknown as { __opened: string[] }).__opened.push(url);
+  },
+  copy: async () => {},
+  readImages: async () => [],
+  pickImages: async () => [],
+  onSummon: () => () => {},
+  onDropFiles: () => () => {},
+  checkForUpdate: async () => null,
+  installUpdate: async () => {},
+} as unknown as UiServices;
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App services={services} />
+  </StrictMode>,
+);

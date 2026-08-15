@@ -1,0 +1,702 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mD:/Self Project/Quacket[39m
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 0ms
+[22m[39m
+[QA28] S1 disk after the crash
+{
+  "relaunchAfterMs": 0,
+  "acceptedAs": "https://github.com/c3lew/quacket-qa-target/issues/58",
+  "state": "filing",
+  "receipt": null
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 0ms
+[22m[39m
+[QA28] S1 recovery events
+{
+  "relaunchAfterMs": 0,
+  "events": [
+    {
+      "state": "checking",
+      "filingId": "fil_qa28_s1_0_1786814932770"
+    },
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s1_0_1786814932770",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/59",
+        "issueNumber": 59,
+        "filingId": "fil_qa28_s1_0_1786814932770",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S1 issue 0 1786814932770"
+      }
+    }
+  ]
+}
+
+[QA28] S1 gh calls made during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "label list --repo c3lew/quacket-qa-target --limit 100 --json name",
+  "issue create --repo c3lew/quacket-qa-target --title QA28 S1 issue 0 1786814932770 --body-file - --label bug"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 0ms
+[22m[39m
+[QA28] S1 issues on GitHub carrying this identity
+{
+  "relaunchAfterMs": 0,
+  "urls": [
+    "https://github.com/c3lew/quacket-qa-target/issues/58"
+  ]
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 20000ms
+[22m[39m
+[QA28] S1 disk after the crash
+{
+  "relaunchAfterMs": 20000,
+  "acceptedAs": "https://github.com/c3lew/quacket-qa-target/issues/60",
+  "state": "filing",
+  "receipt": null
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 20000ms
+[22m[39m
+[QA28] S1 recovery events
+{
+  "relaunchAfterMs": 20000,
+  "events": [
+    {
+      "state": "checking",
+      "filingId": "fil_qa28_s1_20000_1786814932770"
+    },
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s1_20000_1786814932770",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/60",
+        "issueNumber": 60,
+        "filingId": "fil_qa28_s1_20000_1786814932770",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S1 issue 20000 1786814932770"
+      }
+    }
+  ]
+}
+
+[QA28] S1 gh calls made during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed with no second create — new issue, relaunched after 20000ms
+[22m[39m
+[QA28] S1 issues on GitHub carrying this identity
+{
+  "relaunchAfterMs": 20000,
+  "urls": [
+    "https://github.com/c3lew/quacket-qa-target/issues/60"
+  ]
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed on the next run with no second create — comment
+[22m[39m
+[QA28] S1c recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s1c_1786814932770"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s1c_1786814932770",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/37#issuecomment-5303399930",
+      "issueNumber": 37,
+      "filingId": "fil_qa28_s1c_1786814932770",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "comment",
+        "issueNumber": 37
+      },
+      "title": "QA28 S1 comment 1786814932770"
+    }
+  }
+]
+
+[QA28] S1c gh calls during recovery
+[
+  "api repos/c3lew/quacket-qa-target/issues/37/comments?per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS1 receipt-write crash[2m > [22m[2mresolves to filed on the next run with no second create — comment
+[22m[39m
+[QA28] S1c comments on GitHub carrying this identity
+[
+  "https://github.com/c3lew/quacket-qa-target/issues/37#issuecomment-5303399930"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS2 authoritative no-match[2m > [22m[2mresumes the same Filing and creates exactly one remote report
+[22m[39m
+[QA28] S2 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s2_1786814932770"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s2_1786814932770",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/61",
+      "issueNumber": 61,
+      "filingId": "fil_qa28_s2_1786814932770",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA28 S2 no-match 1786814932770"
+    }
+  }
+]
+
+[QA28] S2 gh calls during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "label list --repo c3lew/quacket-qa-target --limit 100 --json name",
+  "issue create --repo c3lew/quacket-qa-target --title QA28 S2 no-match 1786814932770 --body-file - --label bug"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS2 authoritative no-match[2m > [22m[2mresumes the same Filing and creates exactly one remote report
+[22m[39m
+[QA28] S2 issues on GitHub carrying this identity
+[
+  "https://github.com/c3lew/quacket-qa-target/issues/61"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2moffline stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 offline events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_offline_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_offline_1786814932770",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[QA28] S3 offline gh calls
+[
+  "api user"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2moffline stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 offline lastCheck on disk
+{
+  "message": "Could not confirm which GitHub account is signed in.",
+  "at": "2026-08-15T17:29:43.474Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2moffline stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 offline a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/62
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mnot authenticated stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 not authenticated events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_notauthenticated_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_notauthenticated_1786814932770",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[QA28] S3 not authenticated gh calls
+[
+  "api user"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mnot authenticated stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 not authenticated lastCheck on disk
+{
+  "message": "Could not confirm which GitHub account is signed in.",
+  "at": "2026-08-15T17:29:48.017Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mnot authenticated stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 not authenticated a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/63
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mrate limited stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 rate limited events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_ratelimited_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_ratelimited_1786814932770",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 rate limited gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mrate limited stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 rate limited lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T17:29:52.344Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mrate limited stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 rate limited a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/64
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mmalformed page stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 malformed page events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_malformedpage_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_malformedpage_1786814932770",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 malformed page gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mmalformed page stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 malformed page lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T17:29:57.162Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mmalformed page stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 malformed page a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/65
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mempty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 empty stdout, exit 0 events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_emptystdoutexit0_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_emptystdoutexit0_1786814932770",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 empty stdout, exit 0 gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mempty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 empty stdout, exit 0 lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T17:30:01.960Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2mempty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 empty stdout, exit 0 a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/66
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2minterrupted pagination stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 interrupted pagination events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_interruptedpagination_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_interruptedpagination_1786814932770",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 interrupted pagination gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=2",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=3",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=4",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=5",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=6",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=7",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=8",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=9",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=10",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=11",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=12",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=13",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=14",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=15",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=16",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=17",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=18",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=19",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=20",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=21",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=22",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=23",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=24",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=25",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=26",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=27",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=28",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=29",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=30",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=31",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=32",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=33",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=34",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=35",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=36",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=37",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=38",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=39",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=40",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=41",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=42",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=43",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=44",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=45",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=46",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=47",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=48",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=49",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=50",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=51",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=52",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=53",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=54",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=55",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=56",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=57",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=58",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=59",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=60",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=61",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=62",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=63",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=64",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=65",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=66",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=67",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=68",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=69",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=70",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=71",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=72",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=73",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=74",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=75",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=76",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=77",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=78",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=79",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=80",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=81",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=82",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=83",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=84",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=85",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=86",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=87",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=88",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=89",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=90",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=91",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=92",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=93",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=94",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=95",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=96",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=97",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=98",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=99",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=100"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2minterrupted pagination stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 interrupted pagination lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T17:30:06.891Z"
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS3 inconclusive lookups[2m > [22m[2minterrupted pagination stays pending, creates nothing, and leaves the report on disk
+[22m[39m
+[QA28] S3 interrupted pagination a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/67
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS4 the failed/pending boundary[2m > [22m[2ma resumed Filing that dies on the upload leg is failed, and nothing was created
+[22m[39m
+[QA28] S4 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s4_1786814932770"
+  },
+  {
+    "state": "failed",
+    "filingId": "fil_qa28_s4_1786814932770",
+    "kind": "upload_failed",
+    "message": "Could not upload an image to this repo."
+  }
+]
+
+[QA28] S4 gh calls during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "api repos/c3lew/quacket-qa-target/git/ref/heads/quacket-assets",
+  "api --method PUT repos/c3lew/quacket-qa-target/contents/.quacket/assets/2026-08-15T17-30-14-101Z-img_1.png --input -"
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS4 the failed/pending boundary[2m > [22m[2ma resumed create that loses its outcome goes back to pending, not failed
+[22m[39m
+[QA28] S5 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s5_1786814932770"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s5_1786814932770",
+    "message": "Could not create the issue. GitHub took too long to respond."
+  }
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS4 the failed/pending boundary[2m > [22m[2ma resumed create that loses its outcome goes back to pending, not failed
+[22m[39m
+[QA28] S5 the Filing is still on disk for the next launch
+{
+  "state": "failed",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue. GitHub took too long to respond."
+  }
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS6 receipt and cleanup queue[2m > [22m[2mrestores the receipt across a restart with no GitHub call at all, and drains the workspace
+[22m[39m
+[QA28] S6 snapshot after a failed cleanup
+{
+  "state": "filed",
+  "cleanup": "pending",
+  "cleanupFailure": {
+    "message": "injected remove failure",
+    "at": "2026-08-15T17:30:20.448Z",
+    "attempts": 1
+  }
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS6 receipt and cleanup queue[2m > [22m[2mrestores the receipt across a restart with no GitHub call at all, and drains the workspace
+[22m[39m
+[QA28] S6 second launch, cleanup still broken
+{
+  "events": [
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s6_1786814932770",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/68",
+        "issueNumber": 68,
+        "filingId": "fil_qa28_s6_1786814932770",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S6 stuck cleanup 1786814932770"
+      }
+    }
+  ],
+  "cleanupFailure": {
+    "message": "injected remove failure",
+    "at": "2026-08-15T17:30:20.448Z",
+    "attempts": 2
+  }
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS6 receipt and cleanup queue[2m > [22m[2mrestores the receipt across a restart with no GitHub call at all, and drains the workspace
+[22m[39m
+[QA28] S6 final launch events
+[
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s6_1786814932770",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/68",
+      "issueNumber": 68,
+      "filingId": "fil_qa28_s6_1786814932770",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA28 S6 stuck cleanup 1786814932770"
+    }
+  }
+]
+
+[QA28] S6 gh calls during that launch
+[]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS7 recovery is not in the way[2m > [22m[2ma GitHub that never answers costs a status, not a capture
+[22m[39m
+[QA28] S7 while recovery hangs
+{
+  "recoveryEvents": [
+    "checking"
+  ],
+  "recoveryFinished": false,
+  "filedAnyway": "https://github.com/c3lew/quacket-qa-target/issues/69",
+  "tookMs": 2589
+}
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2mS7 recovery is not in the way[2m > [22m[2mrecover() never rejects, even with an unreadable workspace
+[22m[39m
+[QA28] S8 unreadable workspace
+[
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s8_1786814932770",
+    "message": "Could not read this report on this computer."
+  }
+]
+
+[90mstdout[2m | src/qa-28.test.ts[2m > [22m[2martifacts[2m > [22m[2mlists the issues this run filed
+[22m[39m
+[QA28] issues filed by this QA run
+[
+  58,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  68,
+  69
+]
+
+ [31m❯[39m src/qa-28.test.ts [2m([22m[2m16 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 90949[2mms[22m[39m
+[31m   [31m×[31m S1 receipt-write crash[2m > [22mresolves to filed with no second create — new issue, relaunched after 0ms[39m[33m 7589[2mms[22m[39m
+[31m     → expected [ [ 'issue', 'create', …(8) ] ] to deeply equal [][39m
+   [33m[2m✓[22m[39m S1 receipt-write crash[2m > [22mresolves to filed with no second create — new issue, relaunched after 20000ms [33m 25025[2mms[22m[39m
+   [33m[2m✓[22m[39m S1 receipt-write crash[2m > [22mresolves to filed on the next run with no second create — comment [33m 2876[2mms[22m[39m
+   [33m[2m✓[22m[39m S2 authoritative no-match[2m > [22mresumes the same Filing and creates exactly one remote report [33m 14136[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22moffline stays pending, creates nothing, and leaves the report on disk [33m 4811[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22mnot authenticated stays pending, creates nothing, and leaves the report on disk [33m 3892[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22mrate limited stays pending, creates nothing, and leaves the report on disk [33m 4760[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22mmalformed page stays pending, creates nothing, and leaves the report on disk [33m 4671[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22mempty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk [33m 4844[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 inconclusive lookups[2m > [22minterrupted pagination stays pending, creates nothing, and leaves the report on disk [33m 5392[2mms[22m[39m
+   [33m[2m✓[22m[39m S4 the failed/pending boundary[2m > [22ma resumed Filing that dies on the upload leg is failed, and nothing was created [33m 4247[2mms[22m[39m
+   [33m[2m✓[22m[39m S4 the failed/pending boundary[2m > [22ma resumed create that loses its outcome goes back to pending, not failed [33m 3052[2mms[22m[39m
+   [33m[2m✓[22m[39m S6 receipt and cleanup queue[2m > [22mrestores the receipt across a restart with no GitHub call at all, and drains the workspace [33m 2390[2mms[22m[39m
+   [33m[2m✓[22m[39m S7 recovery is not in the way[2m > [22ma GitHub that never answers costs a status, not a capture [33m 3259[2mms[22m[39m
+   [32m✓[39m S7 recovery is not in the way[2m > [22mrecover() never rejects, even with an unreadable workspace[32m 3[2mms[22m[39m
+   [32m✓[39m artifacts[2m > [22mlists the issues this run filed[32m 0[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/qa-28.test.ts[2m > [22mS1 receipt-write crash[2m > [22mresolves to filed with no second create — new issue, relaunched after 0ms
+[31m[1mAssertionError[22m: expected [ [ 'issue', 'create', …(8) ] ] to deeply equal [][39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- [][39m
+[31m+ [[39m
+[31m+   [[39m
+[31m+     "issue",[39m
+[31m+     "create",[39m
+[31m+     "--repo",[39m
+[31m+     "c3lew/quacket-qa-target",[39m
+[31m+     "--title",[39m
+[31m+     "QA28 S1 issue 0 1786814932770",[39m
+[31m+     "--body-file",[39m
+[31m+     "-",[39m
+[31m+     "--label",[39m
+[31m+     "bug",[39m
+[31m+   ],[39m
+[31m+ ][39m
+
+[36m [2m❯[22m src/qa-28.test.ts:[2m304:42[22m[39m
+    [90m302| [39m          [35mconst[39m done [33m=[39m events[[34m1[39m][33m;[39m
+    [90m303| [39m          [35mif[39m (done[33m?.[39mstate [33m!==[39m [32m'filed'[39m) [35mthrow[39m [35mnew[39m [33mError[39m([32m'not filed'[39m)[33m;[39m
+    [90m304| [39m          [34mexpect[39m([34mcreates[39m(recoveryCalls))[33m.[39m[34mtoEqual[39m([])[33m;[39m
+    [90m   | [39m                                         [31m^[39m
+    [90m305| [39m          [34mexpect[39m(remote)[33m.[39m[34mtoHaveLength[39m([34m1[39m)[33m;[39m
+    [90m306| [39m          [34mexpect[39m(done[33m.[39mreceipt[33m.[39murl)[33m.[39m[34mtoBe[39m(live[33m.[39murl)[33m;[39m
+[90m [2m❯[22m withCtx src/qa-28.test.ts:[2m178:5[22m[39m
+[90m [2m❯[22m src/qa-28.test.ts:[2m265:9[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m15 passed[39m[22m[90m (16)[39m
+[2m   Start at [22m 01:28:52
+[2m   Duration [22m 91.64s[2m (transform 65ms, setup 0ms, collect 90ms, tests 90.95s, environment 0ms, prepare 90ms)[22m
+
