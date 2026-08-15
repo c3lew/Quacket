@@ -1,0 +1,62 @@
+// ── S9 — a match is the exact marker, never the title (AC: exact marker) ─────
+
+describe('S9 exact marker, not the title', () => {
+  it(
+    'does not match an identical title filed under a different identity',
+    async () => {
+      const title = `QA28 S9 identical title ${RUN}`;
+      // A real report already on GitHub, under its OWN identity.
+      const decoyId = `fil_qa28_s9_decoy_${RUN}`;
+      let decoyUrl = '';
+      await withCtx(decoyId, async (c) => {
+        await c.save(draftFor(title));
+        const live = await c
+          .launch()
+          .file({ kind: 'new', draft: draftFor(title), repo: REPO, decision: 'as-captured' });
+        decoyUrl = live.url;
+        filed.push(live.issueNumber);
+      });
+      log('S9 the report already on GitHub, same title, different identity', decoyUrl);
+
+      // A DIFFERENT Filing, same title, whose create never reached GitHub.
+      const id = `fil_qa28_s9_${RUN}`;
+      await withCtx(id, async (c) => {
+        const d = draftFor(title);
+        await c.save(d);
+        c.faults.push({
+          when: (a) => a.includes('issue') && a.includes('create'),
+          result: fail('gh: connection reset'),
+        });
+        await expect(
+          c.launch().file({ kind: 'new', draft: d, repo: REPO, decision: 'as-captured' }),
+        ).rejects.toThrow();
+
+        c.faults.length = 0;
+        const before = c.calls.length;
+        const events = await drain(c.launch());
+        const recoveryCalls = c.calls.slice(before);
+        log('S9 recovery events', events);
+        log('S9 gh calls during recovery', recoveryCalls.map((a) => a.join(' ')));
+
+        const done = events[events.length - 1];
+        if (done?.state !== 'filed') throw new Error('not filed');
+        filed.push(done.receipt.issueNumber);
+        log('S9 the decoy vs what recovery produced', {
+          decoy: decoyUrl,
+          receipt: done.receipt.url,
+        });
+
+        // The decoy was NOT mistaken for this Filing's report...
+        expect(done.receipt.url).not.toBe(decoyUrl);
+        // ...it resumed and created exactly one report of its own...
+        expect(creates(recoveryCalls).filter((a) => a.includes('create'))).toHaveLength(1);
+        // ...and exactly one issue on GitHub carries THIS identity.
+        const mine = await remoteIssues(id, 1);
+        log('S9 issues carrying this identity', mine.map((r) => r.html_url));
+        expect(mine).toHaveLength(1);
+        expect(mine[0]?.html_url).toBe(done.receipt.url);
+      });
+    },
+    TIMEOUT,
+  );
+});

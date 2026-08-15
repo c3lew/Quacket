@@ -1,0 +1,579 @@
+
+ RUN  v3.2.7 D:/Self Project/Quacket
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 0ms
+
+[QA28] S1 disk after the crash
+{
+  "relaunchAfterMs": 0,
+  "acceptedAs": "https://github.com/c3lew/quacket-qa-target/issues/83",
+  "state": "filing",
+  "receipt": null
+}
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 0ms
+
+[QA28] S1 recovery events
+{
+  "relaunchAfterMs": 0,
+  "events": [
+    {
+      "state": "checking",
+      "filingId": "fil_qa28_s1_0_1786817846541"
+    },
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s1_0_1786817846541",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/83",
+        "issueNumber": 83,
+        "filingId": "fil_qa28_s1_0_1786817846541",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S1 issue 0 1786817846541"
+      }
+    }
+  ]
+}
+
+[QA28] S1 gh calls made during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 0ms
+
+[QA28] S1 issues on GitHub carrying this identity
+{
+  "relaunchAfterMs": 0,
+  "urls": [
+    "https://github.com/c3lew/quacket-qa-target/issues/83"
+  ]
+}
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 20000ms
+
+[QA28] S1 disk after the crash
+{
+  "relaunchAfterMs": 20000,
+  "acceptedAs": "https://github.com/c3lew/quacket-qa-target/issues/84",
+  "state": "filing",
+  "receipt": null
+}
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 20000ms
+
+[QA28] S1 recovery events
+{
+  "relaunchAfterMs": 20000,
+  "events": [
+    {
+      "state": "checking",
+      "filingId": "fil_qa28_s1_20000_1786817846541"
+    },
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s1_20000_1786817846541",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/84",
+        "issueNumber": 84,
+        "filingId": "fil_qa28_s1_20000_1786817846541",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S1 issue 20000 1786817846541"
+      }
+    }
+  ]
+}
+
+[QA28] S1 gh calls made during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 20000ms
+
+[QA28] S1 issues on GitHub carrying this identity
+{
+  "relaunchAfterMs": 20000,
+  "urls": [
+    "https://github.com/c3lew/quacket-qa-target/issues/84"
+  ]
+}
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed on the next run with no second create — comment
+
+[QA28] S1c recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s1c_1786817846541"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s1c_1786817846541",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/37#issuecomment-5303592475",
+      "issueNumber": 37,
+      "filingId": "fil_qa28_s1c_1786817846541",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "comment",
+        "issueNumber": 37
+      },
+      "title": "QA28 S1 comment 1786817846541"
+    }
+  }
+]
+
+[QA28] S1c gh calls during recovery
+[
+  "api repos/c3lew/quacket-qa-target/issues/37/comments?per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S1 receipt-write crash > resolves to filed on the next run with no second create — comment
+
+[QA28] S1c comments on GitHub carrying this identity
+[
+  "https://github.com/c3lew/quacket-qa-target/issues/37#issuecomment-5303592475"
+]
+
+stdout | src/qa-28.test.ts > S2 authoritative no-match > resumes the same Filing and creates exactly one remote report
+
+[QA28] S2 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s2_1786817846541"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s2_1786817846541",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/85",
+      "issueNumber": 85,
+      "filingId": "fil_qa28_s2_1786817846541",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA28 S2 no-match 1786817846541"
+    }
+  }
+]
+
+[QA28] S2 gh calls during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "label list --repo c3lew/quacket-qa-target --limit 100 --json name",
+  "issue create --repo c3lew/quacket-qa-target --title QA28 S2 no-match 1786817846541 --body-file - --label bug"
+]
+
+stdout | src/qa-28.test.ts > S2 authoritative no-match > resumes the same Filing and creates exactly one remote report
+
+[QA28] S2 issues on GitHub carrying this identity
+[
+  "https://github.com/c3lew/quacket-qa-target/issues/85"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > offline stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 offline events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_offline_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_offline_1786817846541",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[QA28] S3 offline gh calls
+[
+  "api user"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > offline stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 offline lastCheck on disk
+{
+  "message": "Could not confirm which GitHub account is signed in.",
+  "at": "2026-08-15T18:19:07.462Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > offline stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 offline a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/86
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > not authenticated stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 not authenticated events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_notauthenticated_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_notauthenticated_1786817846541",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[QA28] S3 not authenticated gh calls
+[
+  "api user"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > not authenticated stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 not authenticated lastCheck on disk
+{
+  "message": "Could not confirm which GitHub account is signed in.",
+  "at": "2026-08-15T18:19:26.374Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > not authenticated stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 not authenticated a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/87
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > rate limited stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 rate limited events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_ratelimited_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_ratelimited_1786817846541",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 rate limited gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > rate limited stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 rate limited lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T18:19:45.347Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > rate limited stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 rate limited a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/88
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > malformed page stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 malformed page events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_malformedpage_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_malformedpage_1786817846541",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 malformed page gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > malformed page stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 malformed page lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T18:20:05.235Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > malformed page stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 malformed page a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/89
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > empty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 empty stdout, exit 0 events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_emptystdoutexit0_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_emptystdoutexit0_1786817846541",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 empty stdout, exit 0 gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > empty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 empty stdout, exit 0 lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T18:20:24.693Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > empty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 empty stdout, exit 0 a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/90
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > interrupted pagination stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 interrupted pagination events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s3_interruptedpagination_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s3_interruptedpagination_1786817846541",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+[QA28] S3 interrupted pagination gh calls
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=2"
+]
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > interrupted pagination stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 interrupted pagination lastCheck on disk
+{
+  "message": "Could not check GitHub for this report.",
+  "at": "2026-08-15T18:20:44.060Z"
+}
+
+stdout | src/qa-28.test.ts > S3 inconclusive lookups > interrupted pagination stays pending, creates nothing, and leaves the report on disk
+
+[QA28] S3 interrupted pagination a new report filed while the old one is pending
+https://github.com/c3lew/quacket-qa-target/issues/91
+
+stdout | src/qa-28.test.ts > S4 the failed/pending boundary > a resumed Filing that dies on the upload leg is failed, and nothing was created
+
+[QA28] S4 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s4_1786817846541"
+  },
+  {
+    "state": "failed",
+    "filingId": "fil_qa28_s4_1786817846541",
+    "kind": "upload_failed",
+    "message": "Could not upload an image to this repo."
+  }
+]
+
+[QA28] S4 gh calls during recovery
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1",
+  "api repos/c3lew/quacket-qa-target/git/ref/heads/quacket-assets",
+  "api --method PUT repos/c3lew/quacket-qa-target/contents/.quacket/assets/2026-08-15T18-21-05-924Z-img_1.png --input -"
+]
+
+stdout | src/qa-28.test.ts > S4 the failed/pending boundary > a resumed create that loses its outcome goes back to pending, not failed
+
+[QA28] S5 recovery events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s5_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s5_1786817846541",
+    "message": "Could not create the issue. GitHub took too long to respond."
+  }
+]
+
+stdout | src/qa-28.test.ts > S4 the failed/pending boundary > a resumed create that loses its outcome goes back to pending, not failed
+
+[QA28] S5 the Filing is still on disk for the next launch
+{
+  "state": "failed",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue. GitHub took too long to respond."
+  }
+}
+
+stdout | src/qa-28.test.ts > S4 the failed/pending boundary > a resumed create that loses its outcome goes back to pending, not failed
+
+[QA28] S5 the launch after that, with GitHub unavailable
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa28_s5_1786817846541"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s5_1786817846541",
+    "message": "Could not check GitHub for this report."
+  }
+]
+
+stdout | src/qa-28.test.ts > S6 receipt and cleanup queue > restores the receipt across a restart with no GitHub call at all, and drains the workspace
+
+[QA28] S6 snapshot after a failed cleanup
+{
+  "state": "filed",
+  "cleanup": "pending",
+  "cleanupFailure": {
+    "message": "injected remove failure",
+    "at": "2026-08-15T18:21:42.004Z",
+    "attempts": 1
+  }
+}
+
+stdout | src/qa-28.test.ts > S6 receipt and cleanup queue > restores the receipt across a restart with no GitHub call at all, and drains the workspace
+
+[QA28] S6 second launch, cleanup still broken
+{
+  "events": [
+    {
+      "state": "filed",
+      "filingId": "fil_qa28_s6_1786817846541",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/92",
+        "issueNumber": 92,
+        "filingId": "fil_qa28_s6_1786817846541",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA28 S6 stuck cleanup 1786817846541"
+      }
+    }
+  ],
+  "cleanupFailure": {
+    "message": "injected remove failure",
+    "at": "2026-08-15T18:21:42.004Z",
+    "attempts": 2
+  }
+}
+
+stdout | src/qa-28.test.ts > S6 receipt and cleanup queue > restores the receipt across a restart with no GitHub call at all, and drains the workspace
+
+[QA28] S6 final launch events
+[
+  {
+    "state": "filed",
+    "filingId": "fil_qa28_s6_1786817846541",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/92",
+      "issueNumber": 92,
+      "filingId": "fil_qa28_s6_1786817846541",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA28 S6 stuck cleanup 1786817846541"
+    }
+  }
+]
+
+[QA28] S6 gh calls during that launch
+[]
+
+stdout | src/qa-28.test.ts > S7 recovery is not in the way > a GitHub that never answers costs a status, not a capture
+
+[QA28] S7 while recovery hangs
+{
+  "recoveryEvents": [
+    "checking"
+  ],
+  "recoveryFinished": false,
+  "filedAnyway": "https://github.com/c3lew/quacket-qa-target/issues/93",
+  "tookMs": 2649
+}
+
+stdout | src/qa-28.test.ts > S7 recovery is not in the way > recover() never rejects, even with an unreadable workspace
+
+[QA28] S8 unreadable workspace
+[
+  {
+    "state": "pending",
+    "filingId": "fil_qa28_s8_1786817846541",
+    "message": "Could not read this report on this computer."
+  }
+]
+
+stdout | src/qa-28.test.ts > artifacts > lists the issues this run filed
+
+[QA28] issues filed by this QA run
+[
+  83,
+  84,
+  85,
+  86,
+  87,
+  88,
+  89,
+  90,
+  91,
+  92,
+  93
+]
+
+ ✓ src/qa-28.test.ts (16 tests) 259059ms
+   ✓ S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 0ms  18046ms
+   ✓ S1 receipt-write crash > resolves to filed with no second create — new issue, relaunched after 20000ms  24964ms
+   ✓ S1 receipt-write crash > resolves to filed on the next run with no second create — comment  16927ms
+   ✓ S2 authoritative no-match > resumes the same Filing and creates exactly one remote report  25967ms
+   ✓ S3 inconclusive lookups > offline stays pending, creates nothing, and leaves the report on disk  18907ms
+   ✓ S3 inconclusive lookups > not authenticated stays pending, creates nothing, and leaves the report on disk  18276ms
+   ✓ S3 inconclusive lookups > rate limited stays pending, creates nothing, and leaves the report on disk  19634ms
+   ✓ S3 inconclusive lookups > malformed page stays pending, creates nothing, and leaves the report on disk  19404ms
+   ✓ S3 inconclusive lookups > empty stdout, exit 0 stays pending, creates nothing, and leaves the report on disk  19612ms
+   ✓ S3 inconclusive lookups > interrupted pagination stays pending, creates nothing, and leaves the report on disk  19357ms
+   ✓ S4 the failed/pending boundary > a resumed Filing that dies on the upload leg is failed, and nothing was created  19299ms
+   ✓ S4 the failed/pending boundary > a resumed create that loses its outcome goes back to pending, not failed  32582ms
+   ✓ S6 receipt and cleanup queue > restores the receipt across a restart with no GitHub call at all, and drains the workspace  2488ms
+   ✓ S7 recovery is not in the way > a GitHub that never answers costs a status, not a capture  3588ms
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  02:17:25
+   Duration  259.77s (transform 74ms, setup 0ms, collect 101ms, tests 259.06s, environment 0ms, prepare 96ms)
+
+
+[exited with code 0]
