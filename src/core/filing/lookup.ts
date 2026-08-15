@@ -23,6 +23,12 @@
  * Pagination is walked explicitly rather than with `gh api --paginate`, so
  * "complete" is something this file can prove: every page exited 0, parsed, and
  * the walk ended on a short page rather than on a cap.
+ *
+ * What it CANNOT prove is that the listing is current. These endpoints are
+ * served from a replica that trails a create by seconds (#37), so `absent` is
+ * "not in the listing I was served", and only the caller — which knows when the
+ * create was attempted — can turn that into "not on GitHub". This file never
+ * waits, sleeps or retries: it reads what GitHub says right now and says so.
  */
 
 import { parseJson, type Gh } from '../github/gh.ts';

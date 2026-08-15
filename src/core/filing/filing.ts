@@ -230,6 +230,18 @@ interface Snapshot {
    * unreachable for a week should say so from disk alone.
    */
   lastCheck?: { message: string; at: string };
+  /**
+   * The instant before this Filing last asked GitHub to CREATE the report — not
+   * "last written", which is what `updatedAt` means and why this is its own
+   * field. Recovery needs to date the create and nothing else: a snapshot
+   * touched by an upload, a failure or a check would make `updatedAt` answer a
+   * different question than the one being asked.
+   *
+   * Optional because a Filing that died before the create never has one, and a
+   * snapshot written before this field existed cannot have one. Both read as
+   * "the create cannot be dated", which waits the full window rather than guess.
+   */
+  attemptedAt?: string;
 }
 
 type FiledSnapshot = Snapshot & { receipt: FilingReceipt };
@@ -351,11 +363,26 @@ export interface FilingDeps {
   now?: () => Date;
   /** Injected so the Filing identity is deterministic in tests. */
   newId?: () => string;
+  /** Injected so recovery's settle wait costs no real time in tests. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/**
+ * How long GitHub's listings may keep answering "not there" about a report that
+ * IS there.
+ *
+ * Measured against real `gh`, no app involved (#37): an issue took 4.3 s and
+ * 6.9 s to turn up in `issues?state=all&creator=…` after its create call
+ * started; comment listings caught up within ~2 s. Both are replica reads, so
+ * neither lag is guaranteed to be zero — this is the measured worst case with
+ * room, and it is a floor on when a no-match may be believed, not a timeout.
+ */
+const SETTLE_MS = 15_000;
 
 export function createFiling({ runner, files, drafts, baseDir, ...options }: FilingDeps) {
   const now = options.now ?? (() => new Date());
   const newId = options.newId ?? randomFilingId;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const gh = createGh(runner);
 
   /**
@@ -798,15 +825,33 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
     const { lastFailure: _previous, ...restarted } = snapshot;
 
     let result: SubmitResult;
+    /** Set the instant before `create` is called, and never unset. */
+    let attemptedAt: string | undefined = snapshot.attemptedAt;
     try {
       const urls = await uploadImages(repo, images, assets, () =>
         record({ ...restarted, assets, state: 'filing', updatedAt: stamp() }),
       );
       const body = withMarker(renderBody(refined, frozen.raw, urls, repo.isPrivate), snapshot.id);
+      /*
+       * The last write before GitHub is asked to create anything, and the only
+       * reason it exists: it is what dates the create for the settle window
+       * recovery waits out. `updatedAt` could not stand in — a Filing with no
+       * images never touches it between `begin` and here, and a resumed one
+       * carries a stamp from the attempt that failed days ago.
+       *
+       * A `record`, so a disk that cannot take it leaves the create undated
+       * rather than unmade — undated waits the full window, which is safe.
+       */
+      attemptedAt = stamp();
+      await record({ ...restarted, assets, state: 'filing', updatedAt: attemptedAt, attemptedAt });
       result = await create(repo, snapshot.target, refined, body);
     } catch (error) {
       await record({
         ...snapshot,
+        // Spread rather than assigned: `exactOptionalPropertyTypes` will not take
+        // an explicit `undefined` here, and `...snapshot` already carries the
+        // stamp from a previous attempt when this one never reached the create.
+        ...(attemptedAt === undefined ? {} : { attemptedAt }),
         assets,
         state: 'failed',
         updatedAt: stamp(),
@@ -919,6 +964,32 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
   };
 
   /**
+   * How much of the settle window is left, in ms. Zero or less means a lookup's
+   * answer can be taken at face value.
+   *
+   * Every unknown lands on the full window rather than on zero: no stamp, an
+   * unparseable one, or a clock that moved backwards between runs. Waiting when
+   * we did not need to costs a few seconds of a startup nobody is watching;
+   * not waiting when we needed to files the user's report twice.
+   *
+   * ponytail: the ceiling is a wall clock, and it is the only date a Filing can
+   * carry across a restart. A clock that jumps FORWARD past the window between
+   * the create and the next launch — an NTP correction, a laptop resuming from
+   * sleep — makes a recent create look old and skips the wait. The upgrade path
+   * is a second, monotonic anchor written beside `attemptedAt` (a boot id plus
+   * uptime), which is only worth building if this is ever seen.
+   */
+  /** Filing ids a `recover()` pass is working on right now. See its own note. */
+  const reconciling = new Set<string>();
+
+  const settleWait = (attemptedAt: string | undefined): number => {
+    if (attemptedAt === undefined) return SETTLE_MS;
+    const elapsed = now().getTime() - Date.parse(attemptedAt);
+    if (Number.isNaN(elapsed) || elapsed < 0) return SETTLE_MS;
+    return SETTLE_MS - elapsed;
+  };
+
+  /**
    * Everything one interrupted Filing can turn into, as a stream of one to three
    * events. Split out of the generator so the walk over the workspaces stays
    * readable, and so the fixed matrix below is one function you can read top to
@@ -948,6 +1019,20 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
     }
 
     yield { state: 'checking', filingId: id };
+    /*
+     * `absent` means a complete listing was read and the marker is not in it.
+     * Complete is proven; CURRENT is not, and only both together make a no-match
+     * authoritative. GitHub serves these listings from a replica that trails a
+     * create by seconds, so a lookup run now would answer "not there" about the
+     * report this Filing just filed — and recovery would file it again (#37).
+     *
+     * So the wait comes BEFORE the lookup rather than after a no-match: one
+     * request, and whatever it says is worth believing. The cost is bounded, and
+     * paid only where the create cannot be ruled out as recent: a Filing that
+     * can date its create and dated it yesterday waits not at all.
+     */
+    const wait = settleWait(snapshot.attemptedAt);
+    if (wait > 0) await sleep(wait);
     const found = await findFiling(gh, snapshot.repo, snapshot.target, filingMarker(id));
 
     if (found.kind === 'inconclusive') {
@@ -1035,7 +1120,24 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       // worth reporting — there is no Filing here to be uncertain about.
       const ids = await files.list(root).catch(() => null);
       for (const id of ids ?? []) {
-        yield* reconcile(id);
+        /*
+         * A second pass over a Filing the first pass is still working on would
+         * make its own no-match decision and resume the same Filing again — two
+         * creates, which is the duplicate this module exists to prevent.
+         * `earned` cannot help: it is filled AFTER a create returns, and both
+         * passes are ahead of that.
+         *
+         * Two passes overlap more easily than they look: React StrictMode
+         * double-invokes the boot effect in dev, and the settle wait above holds
+         * each pass open for seconds rather than milliseconds.
+         */
+        if (reconciling.has(id)) continue;
+        reconciling.add(id);
+        try {
+          yield* reconcile(id);
+        } finally {
+          reconciling.delete(id);
+        }
       }
     },
   };

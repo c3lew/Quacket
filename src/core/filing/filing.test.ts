@@ -166,6 +166,13 @@ interface HarnessOptions {
   files?: FileStore;
   /** Deterministic ids: the nth Filing is `fil_<n>`. */
   ids?: string[];
+  /** A clock the test can move, for the cases that are about elapsed time. */
+  now?: () => Date;
+  /**
+   * Recovery's settle wait, made instant. Also the hook the #37 cases use to
+   * make GitHub's listing catch up DURING the wait, which is the whole scenario.
+   */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const withFiling = async (
@@ -184,8 +191,9 @@ const withFiling = async (
         files,
         drafts,
         baseDir: dir,
-        now: NOW,
+        now: options.now ?? NOW,
         newId: () => ids.shift() ?? 'fil_overflow',
+        sleep: options.sleep ?? (async () => {}),
       });
     const filing = launch();
 
@@ -1657,6 +1665,140 @@ describe('startup recovery', () => {
         expect(h.runner.calls.some((c) => c.args.includes('user'))).toBe(false);
       },
       { files: lostReceipt() },
+    );
+  });
+
+  // ── The listing that has not caught up yet (#37) ──────────────────────────
+
+  /**
+   * The duplicate this ticket is about, and it is not a bug in the lookup: the
+   * page GitHub served WAS complete, parsed and marker-free. It was just stale —
+   * the create had landed seconds earlier and the replica behind
+   * `issues?state=all&creator=…` had not caught up (measured at 4.3 s and 6.9 s
+   * against real `gh`). Recovery read that as proof of absence and filed again.
+   *
+   * The fake `sleep` is doing the honest thing here: it is the replica catching
+   * up while recovery waits. Delete the wait and the stale page is what the
+   * lookup sees, which is exactly how the second issue got created.
+   */
+  const catchesUpDuringTheWait = (runner: FakeRunner, page: string, rows: unknown[]) => {
+    const waits: number[] = [];
+    return {
+      waits,
+      sleep: async (ms: number) => {
+        waits.push(ms);
+        runner.on({ cmd: 'gh', argsContain: [page] }, { stdout: JSON.stringify(rows) });
+      },
+    };
+  };
+
+  it('waits out the create before believing a no-match, instead of filing a second issue', async () => {
+    const runner = scriptedRunner();
+    const replica = catchesUpDuringTheWait(runner, issuesPage(1), [issueRow('fil_1')]);
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft());
+
+        runner
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          // Stale: complete, short, well-formed — and missing an issue that exists.
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        expect(replica.waits).toEqual([15_000]);
+        expect(states(events)).toEqual(['checking', 'filed']);
+        expect(filedIn(events)?.issueNumber).toBe(42);
+        // The whole ticket: one report on GitHub, and a receipt pointing at it.
+        expect(createCalls(runner)).toHaveLength(1);
+      },
+      { files: lostReceipt(), runner, sleep: replica.sleep },
+    );
+  });
+
+  it('waits the same way on the comment leg, whose lag is smaller and not zero', async () => {
+    const runner = scriptedRunner();
+    const replica = catchesUpDuringTheWait(runner, commentsPage(7, 1), [
+      {
+        html_url: 'https://github.com/c3lew/Quacket/issues/7#issuecomment-991',
+        body: `More detail.\n${filingMarker('fil_1')}\n`,
+      },
+    ]);
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft({ target: { kind: 'comment', issueNumber: 7 } }));
+
+        runner.on({ cmd: 'gh', argsContain: [commentsPage(7, 1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        expect(replica.waits).toEqual([15_000]);
+        expect(states(events)).toEqual(['checking', 'filed']);
+        expect(createCalls(runner)).toHaveLength(1);
+      },
+      { files: lostReceipt(), runner, sleep: replica.sleep },
+    );
+  });
+
+  it('waits not at all for a Filing whose create is long past', async () => {
+    const runner = scriptedRunner().on({ cmd: 'gh', argsContain: ['issue', 'create'] }, { hangs: true });
+    let clock = new Date('2026-07-16T09:30:00.000Z');
+    const waits: number[] = [];
+    await withFiling(
+      async (h) => {
+        // A create that timed out: the snapshot dates the attempt, nothing else.
+        await expect(h.fileNew(draft())).rejects.toBeTruthy();
+        expect((await h.snapshot('fil_1'))['attemptedAt']).toBe('2026-07-16T09:30:00.000Z');
+
+        // An hour later — far past any replica lag — the listing is believable
+        // the moment it is read.
+        clock = new Date('2026-07-16T10:30:00.000Z');
+        runner
+          .on({ cmd: 'gh', argsContain: ['issue', 'create'] }, { stdout: 'https://github.com/c3lew/Quacket/issues/42\n' })
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        const events = await collect(h.restart());
+
+        expect(waits).toEqual([]);
+        expect(states(events)).toEqual(['checking', 'filed']);
+        expect(filedIn(events)?.filingId).toBe('fil_1');
+      },
+      {
+        runner,
+        now: () => clock,
+        sleep: async (ms) => void waits.push(ms),
+      },
+    );
+  });
+
+  it('waits the full window for a Filing whose create cannot be dated, and lets two overlapping passes resume it once', async () => {
+    const runner = uploadDied();
+    const waits: number[] = [];
+    await withFiling(
+      async (h) => {
+        // Died on the upload leg: no create was ever attempted, so nothing on
+        // disk can date one. The unknown has to read as "maybe seconds ago".
+        await expect(h.fileNew(draft({ images: [image('img_1')] }))).rejects.toBeTruthy();
+        expect((await h.snapshot('fil_1'))['attemptedAt']).toBeUndefined();
+
+        runner
+          .on({ cmd: 'gh', argsContain: ['--method', 'PUT'] }, { stdout: '{"commit":{"sha":"abc123def"}}' })
+          .on(ACTOR, { stdout: '{"login":"octocat"}' })
+          .on({ cmd: 'gh', argsContain: [issuesPage(1)] }, { stdout: '[]' });
+
+        // Two passes over one Filing — what StrictMode's double-invoked boot
+        // effect does in dev, and what the settle wait holds open long enough
+        // for. Both deciding no-match would be two reports.
+        const filing = h.restart();
+        const [first, second] = await Promise.all([collect(filing), collect(filing)]);
+
+        expect(waits).toEqual([15_000]);
+        expect(states(first)).toEqual(['checking', 'filed']);
+        expect(second).toEqual([]);
+        expect(createCalls(runner)).toHaveLength(1);
+      },
+      { runner, sleep: async (ms) => void waits.push(ms) },
     );
   });
 

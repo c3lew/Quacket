@@ -168,6 +168,15 @@ Consequences worth knowing:
   leg, which runs strictly before the create), so a Retry cannot duplicate.
   Indexed GitHub search is deliberately unused: it can find a report but its lag
   means it can never prove one is absent.
+- **A no-match is only believed once the create has settled** (#37). The listing
+  endpoints lag too — measured against real `gh`, an issue took up to 6.9 s to
+  appear in `issues?state=all&creator=…`, comments ~2 s — so "complete listing,
+  marker absent" is not the same fact as "not on GitHub", and reading it as one
+  filed the user's report twice. So the Filing stamps `attemptedAt` the instant
+  before it asks GitHub to create, and reconciliation waits out the remainder of
+  a 15 s window BEFORE it looks: one request, and whatever it says is worth
+  believing. A create that cannot be dated — no stamp, an unparseable one, a
+  clock that moved backwards — waits the full window rather than none.
 - **A pending cleanup drains on that same pass** (#33), and a stuck one records
   when it first failed and how many times it has been tried — `updatedAt` moves
   on every write, so it could not tell the first failure from the fifth.
@@ -204,7 +213,7 @@ src/core/                     no IO, no DOM — everything injected
                               merely BROKE degrades to the CLI default, uncached.
   github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
                               the open-issue list. Every `gh` WRITE moved to filing/.
-  filing/       73 tests      the Filing transaction: one verb (`file`) from a final
+  filing/       77 tests      the Filing transaction: one verb (`file`) from a final
                               draft to a durable receipt. Assigns an opaque identity
                               before the first remote write and carries it in the
                               body as a hidden HTML comment; takes the draft
@@ -342,7 +351,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 764 passed, 30 files
+npx vitest run                    # tests            → 768 passed, 30 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 31 passed
