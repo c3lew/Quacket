@@ -20,7 +20,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 
 import { DraftStore, readDraftDir } from '../core/drafts/store.ts';
 import type { FileStore } from '../core/files.ts';
-import { createFiling, type Filing } from '../core/filing/filing.ts';
+import { createFiling, type Filing, type FilingCommand } from '../core/filing/filing.ts';
 import type { ProcessRunner } from '../core/runner.ts';
 import { FakeRunner } from '../core/testing/fake-runner.ts';
 import { nodeFiles } from '../core/testing/node-files.ts';
@@ -518,6 +518,68 @@ describe('a submit whose local bookkeeping fails after GitHub accepted it', () =
         // Nor did those keystrokes write a draft back into the slot the Filing
         // emptied — which the next boot would restore as a report already filed.
         expect(await store.load()).toBeNull();
+      },
+      { runner },
+    );
+  });
+});
+
+// ── QA #27: the screenshot that will not upload ────────────────────────────
+
+/**
+ * The module proves a File-without-images resume files the same report once,
+ * against the identity the failed attempt already started. What the palette
+ * decides is whether the user is ever OFFERED it, and whether the button sends
+ * a resume at all rather than a fresh submission of the same report — which is
+ * the second issue on GitHub this whole transaction exists to prevent. QA #27
+ * could only see that by driving the palette.
+ */
+describe('a screenshot that cannot be uploaded', () => {
+  it('offers File without the screenshots, which files the SAME report once', async () => {
+    const runner = ghScript().on(
+      { cmd: 'gh', argsContain: ['--method', 'PUT'] },
+      { exitCode: 1, stderr: 'gh: Repository is archived (HTTP 403)' },
+    );
+    await withFiling(
+      async ({ store, filing }) => {
+        const d = dropper();
+        const file = vi.fn((command: FilingCommand) => filing.file(command));
+        const services = fakeServices({
+          onDropFiles: d.onDropFiles,
+          readImages: vi.fn(async () => [
+            { bytes: new Uint8Array([1, 2, 3]), mediaType: 'image/png' as const },
+          ]),
+          saveDraft: vi.fn((draft: Draft) => store.save(draft)),
+          attachImage: vi.fn((draft: Draft, image) => store.attachImage(draft, image).then(() => {})),
+          file,
+        });
+        // The user's order: type it, add the screenshot, refine, send.
+        await boot(services);
+        await type('tray icon vanished after explorer restart');
+        await d.drop(['C:\\Users\\user\\shot.png']);
+        await screen.findByRole('button', { name: 'Edit screenshot 1' });
+        await click(/Refine/);
+        await screen.findByDisplayValue(refined().title);
+        await click(/Submit issue/);
+
+        // The one action the user is given for a screenshot the repo will not
+        // take — and it has to be a button, not a thing they are told about.
+        await click('File without the screenshots');
+
+        expect(await screen.findByText('Issue #42 filed')).toBeInTheDocument();
+        expect(createCalls(runner)).toHaveLength(1);
+        // Same Filing, continued. Not a second report that happens to say the
+        // same thing.
+        expect(file.mock.calls.map((c) => c[0])).toEqual([
+          expect.objectContaining({ kind: 'new' }),
+          { kind: 'resume', filingId: 'fil_1', decision: 'without-images' },
+        ]);
+        // Their words went in; the screenshot that never landed left nothing
+        // behind — no dead ref, no URL into an upload that failed.
+        const body = createCalls(runner)[0]?.stdin ?? '';
+        expect(body).toContain('The icon is gone.');
+        expect(body).not.toContain('quacket-image:');
+        expect(body).not.toContain('raw.githubusercontent.com');
       },
       { runner },
     );

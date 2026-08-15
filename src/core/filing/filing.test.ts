@@ -1430,4 +1430,98 @@ describe('durable Asset receipts', () => {
       { runner, files: keepWorkspace() },
     );
   });
+
+  /**
+   * QA #27 story 22. The failure case above proves a receipt SURVIVES, which
+   * cannot say whether it was written when the first upload landed or only on
+   * the way out — and "only on the way out" is the version a crash loses. So
+   * this reads the disk in the instant before the second upload is spawned,
+   * the same sampling QA had to do by hand against the real `gh`.
+   */
+  it('has the first receipt on disk before the second upload is spawned', async () => {
+    const runner = scriptedRunner();
+    let harness!: Harness;
+    let midFlight: Record<string, unknown> | undefined;
+    const spawn = runner.run.bind(runner);
+    runner.run = async (spec: Parameters<FakeRunner['run']>[0]) => {
+      if (midFlight === undefined && spec.args.includes(uploadOf('img_2'))) {
+        midFlight = await harness.snapshot('fil_1');
+      }
+      return spawn(spec);
+    };
+
+    await withFiling(
+      async (h) => {
+        harness = h;
+        await h.fileNew(twoShots());
+
+        expect(midFlight).toMatchObject({
+          state: 'filing',
+          assets: [{ repo: 'c3lew/Quacket', fingerprint: sha256(image('img_1').bytes) }],
+        });
+        // Nothing is filed yet, so nothing could have written that receipt as
+        // part of finishing.
+        expect(midFlight?.receipt).toBeUndefined();
+      },
+      { runner },
+    );
+  });
+
+  /**
+   * QA #27 story 23, the leg the cases above cannot reach: bytes and media type
+   * can be varied through the interface, the repository cannot — a Filing is
+   * frozen against one target. So the receipt is rebound on disk, which is the
+   * shape a migrated or stale one arrives in, and the fingerprint left matching
+   * these exact bytes. Fingerprint alone would hand back a URL into a repo this
+   * report is not being filed to.
+   */
+  it('refuses a receipt earned against a different repository', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { exitCode: 1, stderr: 'gh: Something went wrong (HTTP 502)' },
+    );
+    await withFiling(
+      async (h) => {
+        const d = draft({
+          images: [image('img_1')],
+          refined: refined({
+            sections: [{ heading: 'Actual', body: '![one](quacket-image:img_1)' }],
+          }),
+        });
+        await expect(h.fileNew(d)).rejects.toMatchObject({ kind: 'create_failed' });
+
+        const snapshot = await h.snapshot('fil_1');
+        const [earned] = snapshot.assets as Record<string, string>[];
+        await h.files.writeText(
+          joinPath(h.dir, 'filings', 'fil_1', 'filing.json'),
+          JSON.stringify({
+            ...snapshot,
+            assets: [
+              {
+                ...earned,
+                repo: 'c3lew/some-other-repo',
+                url: `https://raw.githubusercontent.com/c3lew/some-other-repo/deadbee/.quacket/assets/${STAMP}-img_1.png`,
+              },
+            ],
+          }),
+        );
+        runner.on(
+          { cmd: 'gh', argsContain: ['issue', 'create'] },
+          { stdout: 'https://github.com/c3lew/Quacket/issues/42\n' },
+        );
+
+        await h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' });
+
+        // The bytes went up again, and the URL the user's report points at is
+        // in the repo they filed to.
+        expect(uploadCalls(h.runner)).toHaveLength(2);
+        const filed = createCalls(h.runner).at(-1)?.stdin ?? '';
+        expect(filed).not.toContain('some-other-repo');
+        expect(visible(filed)).toContain(
+          `![one](https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}-img_1.png)`,
+        );
+      },
+      { runner },
+    );
+  });
 });
