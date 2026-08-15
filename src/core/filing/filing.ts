@@ -83,6 +83,32 @@ export interface FilingReceipt extends SubmitResult {
 export type FilingDecision = 'as-captured' | 'without-images';
 
 /**
+ * One screenshot GitHub already has, recorded the instant it landed.
+ *
+ * Keyed by (repo, media type, byte fingerprint) and deliberately NOT by image
+ * id: the id survives annotation, and annotation rewrites the bytes. Reusing by
+ * id would file the report with the screenshot the user drew ON but not the
+ * drawing — a stale image nobody can tell is stale. So the key is the content.
+ *
+ * The repo is part of the key because the URL points into ONE repo's assets
+ * branch, and the media type because it decides the uploaded filename's
+ * extension — two identical PNGs filed as `.png` and `.jpg` are two assets.
+ *
+ * ponytail: receipts live in the Filing that earned them, so today the repo can
+ * only ever match. It is in the key anyway because the record has to stay true
+ * if receipts are ever shared between Filings — a URL that leaked into the wrong
+ * repo is a broken image nobody would think to look for.
+ */
+interface AssetReceipt {
+  repo: string;
+  mediaType: ImageAttachment['mediaType'];
+  /** SHA-256 of the exact bytes, lowercase hex. */
+  fingerprint: string;
+  /** SHA-pinned and immutable, so it stays valid for as long as the branch does. */
+  url: string;
+}
+
+/**
  * BOTH variants carry the decision, and that is not symmetry for its own sake.
  * [File without images] is offered on an upload failure, which normally means a
  * Filing already exists — but "normally" is the word defects hide behind. A
@@ -138,6 +164,12 @@ interface Snapshot {
    * IS the cleanup queue, and this names that rather than leaving it implied.
    */
   cleanup: 'pending';
+  /**
+   * Every screenshot this Filing has already got into the repo. Append-only:
+   * an entry is written the moment one upload is confirmed, so a crash after
+   * the first of several leaves the finished ones on disk for the next run.
+   */
+  assets: AssetReceipt[];
   receipt?: FilingReceipt;
   /** A REMOTE failure. Sanitized: plain-language message only, never stderr. */
   lastFailure?: { kind: GitHubErrorKind; message: string };
@@ -197,6 +229,23 @@ const toBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
+const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+/**
+ * What "the same screenshot" means, in one line.
+ *
+ * `crypto.subtle` exists in the WebView and in Node, and unlike
+ * `crypto.randomUUID` its secure-context gate is satisfied here either way: dev
+ * serves from `http://localhost:1420` and the bundle from `http://
+ * tauri.localhost`, both of which Chromium treats as potentially trustworthy.
+ */
+const fingerprint = async (bytes: Uint8Array): Promise<string> =>
+  // The cast is TypeScript's typed-array generics, not a real possibility: a
+  // bare `Uint8Array` is `ArrayBufferLike`-backed, and `BufferSource` insists on
+  // `ArrayBuffer`. Nothing here ever produces a SharedArrayBuffer.
+  toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource)));
+
 /**
  * An opaque Filing identity: 128 random bits, hex.
  *
@@ -209,7 +258,7 @@ const toBase64 = (bytes: Uint8Array): string => {
 const randomFilingId = (): string => {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return `fil_${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+  return `fil_${toHex(bytes)}`;
 };
 
 const kindOf = (error: unknown): GitHubErrorKind =>
@@ -319,7 +368,9 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       new FilingError('create_failed', 'This report is no longer on this computer.', id);
     if (text === null) throw gone();
     try {
-      return JSON.parse(text) as Snapshot;
+      const parsed = JSON.parse(text) as Snapshot;
+      // A snapshot written before Asset receipts existed simply has none.
+      return { ...parsed, assets: parsed.assets ?? [] };
     } catch {
       // Unreadable is not the same as absent, but the safe action is: report the
       // Filing, and never create remotely on a guess about what it said.
@@ -352,6 +403,7 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       createdAt: stamp(),
       updatedAt: stamp(),
       cleanup: 'pending',
+      assets: [],
     };
 
     try {
@@ -444,24 +496,57 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
   };
 
   /**
-   * Uploads every screenshot and returns id -> URL for the body renderer.
+   * Uploads whatever GitHub does not already have, and returns id -> URL for the
+   * body renderer.
    *
-   * Per-attempt for now: a retry re-uploads. Durable Asset receipts — which make
-   * an uploaded screenshot survive a failed create — are the next ticket, and
-   * the URLs deliberately do NOT go back onto the ImageAttachment, because a
-   * mutable field on a shared object is exactly the representation that ticket
-   * replaces.
+   * The URLs deliberately do NOT go back onto the `ImageAttachment`: a mutable
+   * `uploadedUrl` on a shared object is what this replaces. It said nothing
+   * about WHICH bytes were uploaded or WHERE, so it survived annotation (stale
+   * image) and a repo switch (URL into the wrong repo), and it lived on the
+   * draft — the one thing a Filing has already taken away from the caller.
+   *
+   * `assets` is the caller's live ledger and is appended to IN PLACE, so a throw
+   * partway through still leaves every receipt earned before it in the caller's
+   * hands. Each append is persisted before the next upload starts.
+   *
+   * The map is built in `images` order, and lookups are by image id, so the
+   * order receipts happen to sit in the ledger cannot reach the filed body.
    */
   const uploadImages = async (
     repo: Repo,
     images: ImageAttachment[],
+    assets: AssetReceipt[],
+    onReceipt: () => Promise<void>,
   ): Promise<Map<string, string>> => {
     const urls = new Map<string, string>();
-    if (images.length === 0) return urls;
-
-    await ensureAssetsBranch(repo.nameWithOwner);
+    let branchReady = false;
 
     for (const image of images) {
+      // The key is written ONCE and both compared and stored, so "same asset"
+      // cannot come to mean two different things in two places.
+      const key: Omit<AssetReceipt, 'url'> = {
+        repo: repo.nameWithOwner,
+        mediaType: image.mediaType,
+        fingerprint: await fingerprint(image.bytes),
+      };
+      const reuse = assets.find(
+        (a) =>
+          a.repo === key.repo &&
+          a.mediaType === key.mediaType &&
+          a.fingerprint === key.fingerprint,
+      );
+      if (reuse !== undefined) {
+        urls.set(image.id, reuse.url);
+        continue;
+      }
+
+      // Deferred to the first upload that actually has to happen: a resume where
+      // every screenshot already landed must not touch GitHub for images at all.
+      if (!branchReady) {
+        await ensureAssetsBranch(repo.nameWithOwner);
+        branchReady = true;
+      }
+
       const path = assetPath(image);
       const result = await gh.ok(
         'upload_failed',
@@ -476,7 +561,18 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
       );
       const { commit } = JSON.parse(result.stdout) as { commit: { sha: string } };
       // Pinned to the commit SHA, so the URL survives a force-push of the branch.
-      urls.set(image.id, assetUrl(repo, commit.sha, path));
+      const receipt: AssetReceipt = { ...key, url: assetUrl(repo, commit.sha, path) };
+      assets.push(receipt);
+      /*
+       * Durable before the NEXT upload starts — that ordering is the point.
+       *
+       * A `record` and not a `persist`: the bytes are already in the repo, so a
+       * failed write costs only that a later retry re-uploads them, leaving one
+       * orphan blob on the assets branch. Throwing would cost the user the whole
+       * report because their disk was full, which is much the worse trade.
+       */
+      await onReceipt();
+      urls.set(image.id, receipt.url);
     }
     return urls;
   };
@@ -627,14 +723,37 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
     const repo: Repo = { nameWithOwner: snapshot.repo, isPrivate: snapshot.isPrivate };
     const images = decision === 'without-images' ? [] : frozen.images;
 
+    /*
+     * The live ledger for this attempt. `uploadImages` appends to it as receipts
+     * are earned, so both exits below write whatever it holds at that moment:
+     * a failed attempt keeps the uploads that DID land, and [File without
+     * images] — which uploads nothing — carries the existing ones through
+     * untouched rather than dropping them.
+     */
+    const assets = [...snapshot.assets];
+
+    /*
+     * A resumed Filing carries the previous attempt's failure, and that failure
+     * is history the moment this attempt starts. An in-flight write must not
+     * restate it as current: a snapshot on disk saying `failed` while an upload
+     * is actually running is a record that contradicts itself, exactly like the
+     * `filing`-with-a-receipt one the terminal path above refuses to write.
+     *
+     * The failure is not lost — the catch below writes this attempt's own.
+     */
+    const { lastFailure: _previous, ...restarted } = snapshot;
+
     let result: SubmitResult;
     try {
-      const urls = await uploadImages(repo, images);
+      const urls = await uploadImages(repo, images, assets, () =>
+        record({ ...restarted, assets, state: 'filing', updatedAt: stamp() }),
+      );
       const body = withMarker(renderBody(refined, frozen.raw, urls, repo.isPrivate), snapshot.id);
       result = await create(repo, snapshot.target, refined, body);
     } catch (error) {
       await record({
         ...snapshot,
+        assets,
         state: 'failed',
         updatedAt: stamp(),
         // Sanitized on purpose: the message is the plain-language one the user
@@ -646,6 +765,7 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
 
     const filed: FiledSnapshot = {
       ...snapshot,
+      assets,
       state: 'filed',
       updatedAt: stamp(),
       receipt: { ...result, filingId: snapshot.id },

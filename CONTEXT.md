@@ -147,10 +147,15 @@ Consequences worth knowing:
   (`filingOwnsDraft`). Not a nicety: writing under the old draft id after the
   handoff would recreate a directory whose manifest lists screenshots whose bytes
   now live elsewhere, which `readDraftDir` calls corruption and throws on.
-- **Asset upload is still per-attempt.** A retry re-uploads. Durable Asset
-  receipts (and crash reconciliation against the hidden identity) are the next
-  tickets under #24; the marker every filing now writes is what makes them
-  possible.
+- **An upload is remembered, not repeated** (#27). Each confirmed upload writes
+  an Asset receipt into the Filing snapshot before the next one starts, keyed by
+  repository, media type and a SHA-256 of the exact bytes — so a retry re-sends
+  only what never landed, and annotated bytes are a different asset rather than a
+  stale reuse. The key deliberately is not the image id: an id survives
+  annotation, the bytes do not. Receipts live in the Filing that earned them;
+  nothing shares them between Filings, because nothing needs to yet.
+- **Crash reconciliation against the hidden identity is still the open ticket**
+  under #24; the marker every filing writes is what makes it possible.
 
 ## Module map
 
@@ -176,7 +181,7 @@ src/core/                     no IO, no DOM — everything injected
                               merely BROKE degrades to the CLI default, uncached.
   github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
                               the open-issue list. Every `gh` WRITE moved to filing/.
-  filing/       43 tests      the Filing transaction: one verb (`file`) from a final
+  filing/       52 tests      the Filing transaction: one verb (`file`) from a final
                               draft to a durable receipt. Assigns an opaque identity
                               before the first remote write and carries it in the
                               body as a hidden HTML comment; takes the draft

@@ -11,6 +11,7 @@
  * moved here with the code, rather than being duplicated below the interface.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1169,6 +1170,264 @@ describe('the durable Filing snapshot', () => {
         });
       },
       { runner },
+    );
+  });
+});
+
+// ── Asset receipts ──────────────────────────────────────────────────────────
+
+/**
+ * Everything here is asserted from outside: how many PUTs `gh` was handed, what
+ * URL came out in the body, and what the snapshot on disk holds. Never the
+ * ledger's internal shape beyond what a next run has to read back.
+ *
+ * `remove` is broken on purpose in the success cases — cleanup deletes the
+ * workspace the instant a report is filed, so the snapshot is only readable
+ * afterwards if cleanup could not finish.
+ */
+describe('durable Asset receipts', () => {
+  const keepWorkspace = () => breaking('remove', (path) => path.includes('filings'));
+
+  const OTHER_PNG = new Uint8Array([137, 80, 78, 71, 13, 10]);
+
+  const sha256 = (bytes: Uint8Array): string =>
+    createHash('sha256').update(bytes).digest('hex');
+
+  /** The `gh` argument that names one upload, so a test can fail exactly one. */
+  const uploadOf = (id: string, ext = 'png', repo = 'c3lew/Quacket'): string =>
+    `repos/${repo}/contents/.quacket/assets/${STAMP}-${id}.${ext}`;
+
+  const assetsOf = async (h: Harness, id = 'fil_1'): Promise<Record<string, string>[]> =>
+    ((await h.snapshot(id)).assets ?? []) as Record<string, string>[];
+
+  const twoShots = (over: Partial<ImageAttachment> = {}) =>
+    draft({
+      images: [image('img_1'), image('img_2', { bytes: OTHER_PNG, ...over })],
+      refined: refined({
+        sections: [
+          { heading: 'Actual', body: '![one](quacket-image:img_1)\n\n![two](quacket-image:img_2)' },
+        ],
+      }),
+    });
+
+  it('writes one receipt per upload, bound to the repo, media type and bytes', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(twoShots());
+
+        expect(uploadCalls(h.runner)).toHaveLength(2);
+        expect(await assetsOf(h)).toEqual([
+          {
+            repo: 'c3lew/Quacket',
+            mediaType: 'image/png',
+            fingerprint: sha256(image('img_1').bytes),
+            url: `https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}-img_1.png`,
+          },
+          {
+            repo: 'c3lew/Quacket',
+            mediaType: 'image/png',
+            fingerprint: sha256(OTHER_PNG),
+            url: `https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}-img_2.png`,
+          },
+        ]);
+      },
+      { files: keepWorkspace() },
+    );
+  });
+
+  it('keeps the receipt the first upload earned when the second one fails', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+      { exitCode: 1, stderr: 'gh: Repository is archived (HTTP 403)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(twoShots())).rejects.toMatchObject({ kind: 'upload_failed' });
+
+        // The report never reached GitHub, but the screenshot that DID land is
+        // on disk — a next run must not send those bytes again.
+        expect(createCalls(h.runner)).toHaveLength(0);
+        expect(await assetsOf(h)).toMatchObject([{ fingerprint: sha256(image('img_1').bytes) }]);
+        expect(await h.snapshot('fil_1')).toMatchObject({ state: 'failed' });
+      },
+      { runner },
+    );
+  });
+
+  it('reuses a landed upload on resume instead of sending the same bytes again', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+      { exitCode: 1, stderr: 'gh: Repository is archived (HTTP 403)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(twoShots())).rejects.toMatchObject({ kind: 'upload_failed' });
+        runner.on(
+          { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+          { stdout: '{"commit":{"sha":"second99"}}' },
+        );
+
+        await h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' });
+
+        // Three PUTs in total: img_1 once, img_2 twice (the failure, then the
+        // one that worked). img_1 was never re-sent.
+        const puts = uploadCalls(h.runner).map((c) => c.args[3]);
+        expect(puts).toEqual([uploadOf('img_1'), uploadOf('img_2'), uploadOf('img_2')]);
+        expect(visible(sentBody(h.runner))).toContain(
+          `![one](https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}-img_1.png)`,
+        );
+        expect(visible(sentBody(h.runner))).toContain(
+          `![two](https://raw.githubusercontent.com/c3lew/Quacket/second99/.quacket/assets/${STAMP}-img_2.png)`,
+        );
+      },
+      { runner },
+    );
+  });
+
+  it('spawns nothing at all for images when every screenshot already landed', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { exitCode: 1, stderr: 'gh: Something went wrong (HTTP 502)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(twoShots())).rejects.toMatchObject({ kind: 'create_failed' });
+        expect(uploadCalls(h.runner)).toHaveLength(2);
+
+        runner.on(
+          { cmd: 'gh', argsContain: ['issue', 'create'] },
+          { stdout: 'https://github.com/c3lew/Quacket/issues/42\n' },
+        );
+        await h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' });
+
+        // No second PUT, and no branch check either: with nothing to upload
+        // there is nothing to set up.
+        expect(uploadCalls(h.runner)).toHaveLength(2);
+        const branchChecks = ghCalls(h.runner).filter((c) =>
+          c.args.includes('repos/c3lew/Quacket/git/ref/heads/quacket-assets'),
+        );
+        expect(branchChecks).toHaveLength(1);
+      },
+      { runner },
+    );
+  });
+
+  it('uploads separately for different bytes and for a different media type', async () => {
+    await withFiling(
+      async (h) => {
+        // Same bytes as img_1, filed as a JPEG: the media type is part of the
+        // key, so it is a different asset and gets its own upload.
+        await h.fileNew(twoShots({ bytes: image('img_1').bytes, mediaType: 'image/jpeg' }));
+
+        expect(uploadCalls(h.runner).map((c) => c.args[3])).toEqual([
+          uploadOf('img_1'),
+          uploadOf('img_2', 'jpg'),
+        ]);
+      },
+      { files: keepWorkspace() },
+    );
+  });
+
+  it('uploads one asset for two screenshots that are byte-identical', async () => {
+    await withFiling(
+      async (h) => {
+        await h.fileNew(twoShots({ bytes: image('img_1').bytes }));
+
+        expect(uploadCalls(h.runner)).toHaveLength(1);
+        const url = `https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}-img_1.png`;
+        expect(visible(sentBody(h.runner))).toBe(
+          `## Actual\n\n![one](${url})\n\n![two](${url})\n`,
+        );
+      },
+      { files: keepWorkspace() },
+    );
+  });
+
+  it('resolves every ref to its own image, whatever order the receipts are in', async () => {
+    await withFiling(
+      async (h) => {
+        // Uploads — and therefore receipts — happen in Draft order; the body
+        // references them the other way round.
+        const d = draft({
+          images: [image('img_2', { bytes: OTHER_PNG }), image('img_1')],
+          refined: refined({
+            sections: [
+              { heading: 'Actual', body: '![one](quacket-image:img_1)\n\n![two](quacket-image:img_2)' },
+            ],
+          }),
+        });
+        await h.fileNew(d);
+
+        const stem = `https://raw.githubusercontent.com/c3lew/Quacket/abc123def/.quacket/assets/${STAMP}`;
+        expect(visible(sentBody(h.runner))).toBe(
+          `## Actual\n\n![one](${stem}-img_1.png)\n\n![two](${stem}-img_2.png)\n`,
+        );
+        expect((await assetsOf(h)).map((a) => a.fingerprint)).toEqual([
+          sha256(OTHER_PNG),
+          sha256(image('img_1').bytes),
+        ]);
+      },
+      { files: keepWorkspace() },
+    );
+  });
+
+  it('never says `failed` on disk while a resumed attempt is still running', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+      { exitCode: 1, stderr: 'gh: Repository is archived (HTTP 403)' },
+    );
+    const written: string[] = [];
+    const files: FileStore = {
+      ...nodeFiles,
+      writeText: async (path: string, text: string) => {
+        if (path.endsWith('filing.json.tmp')) written.push(text);
+        return nodeFiles.writeText(path, text);
+      },
+    };
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(twoShots())).rejects.toMatchObject({ kind: 'upload_failed' });
+        written.length = 0;
+        runner.on(
+          { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+          { stdout: '{"commit":{"sha":"second99"}}' },
+        );
+
+        await h.file({ kind: 'resume', filingId: 'fil_1', decision: 'as-captured' });
+
+        // Every write the resume made before it had a receipt describes a Filing
+        // that IS filing — not the previous attempt's failure restated as now.
+        const inFlight = written
+          .map((t) => JSON.parse(t) as Record<string, unknown>)
+          .filter((s) => s.receipt === undefined);
+        expect(inFlight).not.toHaveLength(0);
+        expect(inFlight.map((s) => [s.state, s.lastFailure])).toEqual(
+          inFlight.map(() => ['filing', undefined]),
+        );
+      },
+      { runner, files },
+    );
+  });
+
+  it('leaves the receipts alone on a File-without-images resume, and files once', async () => {
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: [uploadOf('img_2')] },
+      { exitCode: 1, stderr: 'gh: Repository is archived (HTTP 403)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(twoShots())).rejects.toMatchObject({ kind: 'upload_failed' });
+        const before = await assetsOf(h);
+
+        await h.file({ kind: 'resume', filingId: 'fil_1', decision: 'without-images' });
+
+        expect(createCalls(h.runner)).toHaveLength(1);
+        expect(uploadCalls(h.runner)).toHaveLength(2);
+        // The section was image-only, so the raw dump is the floor under it.
+        expect(visible(sentBody(h.runner))).toBe('tray icon vanished\n');
+        expect(await assetsOf(h)).toEqual(before);
+      },
+      { runner, files: keepWorkspace() },
     );
   });
 });
