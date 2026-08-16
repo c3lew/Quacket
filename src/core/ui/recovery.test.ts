@@ -102,8 +102,11 @@ describe('the four things recovery can say', () => {
       '\\',
       '/filings/',
     ];
+    // Buttons are read too, and are written here like every other sentence, so
+    // the guard covers them rather than trusting today's labels to stay clean.
     const words = [
       ...OURS.map((e) => recoveryNotice(e).text),
+      ...OURS.map((e) => recoveryNotice(e).action?.label ?? ''),
       ...OURS.map((e) => recoveryAlert(e) ?? ''),
     ].join(' | ');
 

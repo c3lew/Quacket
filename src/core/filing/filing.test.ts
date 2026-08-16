@@ -1615,14 +1615,32 @@ describe('startup recovery', () => {
     body: `The icon is gone.\n${filingMarker(id)}\n`,
   });
 
+  /**
+   * A sentence that says the report definitively did not go anywhere. Fine on
+   * `failed`, which means exactly that; never on `pending`, which is rendered
+   * after "…is still pending" and would then read as a verdict and a shrug in
+   * one row (#40).
+   */
+  const VERDICT = /\bcould not (file|create|comment|upload|send)\b/i;
+
+  /**
+   * Every recovery test's events pass through here, so the rule above is
+   * checked on every `pending` any of them produces — including the ones a
+   * future path adds — rather than on the one site that broke it.
+   */
   const collect = async (filing: Filing, only?: string): Promise<RecoveryEvent[]> => {
     const events: RecoveryEvent[] = [];
-    for await (const event of filing.recover(only)) events.push(event);
+    for await (const event of filing.recover(only)) {
+      if (event.state === 'pending') expect(event.message).not.toMatch(VERDICT);
+      events.push(event);
+    }
     return events;
   };
   const states = (events: RecoveryEvent[]): string[] => events.map((e) => e.state);
   const filedIn = (events: RecoveryEvent[]): FilingReceipt | undefined =>
     events.flatMap((e) => (e.state === 'filed' ? [e.receipt] : []))[0];
+  const pendingIn = (events: RecoveryEvent[]): string | undefined =>
+    events.flatMap((e) => (e.state === 'pending' ? [e.message] : []))[0];
 
   /** The crash this whole ticket exists for: GitHub said yes, nothing recorded it. */
   const lostReceipt = (): FileStore => ({
@@ -1923,6 +1941,10 @@ describe('startup recovery', () => {
         // A create that timed out may or may not have landed. Pending, and the
         // next launch asks GitHub again rather than asking the user.
         expect(states(events)).toEqual(['checking', 'pending']);
+        // And it SAYS unknown. The palette drops this sentence into "…is still
+        // pending. ${message}", so the create's own "Could not file this
+        // report." would read as a verdict inside a frame that has none (#40).
+        expect(pendingIn(events)).toBe('Could not confirm whether this report was sent.');
         expect(await h.filings()).toEqual(['fil_1']);
       },
       { runner },

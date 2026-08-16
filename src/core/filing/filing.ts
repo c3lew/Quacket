@@ -154,7 +154,12 @@ export type FilingCommand =
 export type RecoveryEvent =
   | { state: 'checking'; filingId: string }
   | { state: 'filed'; filingId: string; receipt: FilingReceipt }
-  /** Plain language, shown as-is: why we still cannot say. */
+  /**
+   * Plain language, shown as-is: why we still cannot say — and phrased as
+   * UNCERTAINTY, never as a verdict. It is rendered after "…is still pending",
+   * so "Could not file this report." would contradict the frame it sits in
+   * (#40). Every producer owes that; `UNCONFIRMED` is how the resume path pays.
+   */
   | { state: 'pending'; filingId: string; message: string }
   | { state: 'failed'; filingId: string; kind: GitHubErrorKind; message: string };
 
@@ -347,6 +352,23 @@ const UNKNOWN_FAILURE = 'Could not file this report.';
 
 /** A workspace whose own record will not open. It stays; we cannot judge it. */
 const UNREADABLE = 'Could not read this report on this computer.';
+
+/**
+ * The one sentence a `pending` event may carry when the reason we still cannot
+ * say is a WRITE that did not finish.
+ *
+ * Every message on a `pending` event is shown inside "Your report from last
+ * time is still pending. ${message}", so it has to be written as uncertainty —
+ * the lookup's own messages are ("Could not check GitHub for this report."). A
+ * create's message is not: it is written for a live submit that definitively
+ * failed, and dropping "Could not file this report." into that frame reads as a
+ * verdict and a shrug in one row (#40).
+ *
+ * So the create's message is REPLACED here rather than passed through. What is
+ * lost is why the write stopped — which is a question about a report we cannot
+ * even confirm was sent, and the next startup asks GitHub rather than the user.
+ */
+const UNCONFIRMED = 'Could not confirm whether this report was sent.';
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : UNKNOWN_FAILURE;
@@ -1087,10 +1109,9 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
        * and the next startup asks GitHub rather than the user.
        */
       const kind = error instanceof FilingError ? error.kind : 'create_failed';
-      const message = messageOf(error);
       yield kind === 'upload_failed'
-        ? { state: 'failed', filingId: id, kind, message }
-        : { state: 'pending', filingId: id, message };
+        ? { state: 'failed', filingId: id, kind, message: messageOf(error) }
+        : { state: 'pending', filingId: id, message: UNCONFIRMED };
     }
   };
 

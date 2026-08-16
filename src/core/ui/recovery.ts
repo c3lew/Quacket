@@ -63,10 +63,19 @@ export function recoveryNotice(event: RecoveryEvent): RecoveryNotice {
       return { text: 'Still checking your report from last time…', tone: 'busy', action: null };
 
     /*
-     * The message comes from the lookup and is shown as-is, because only it
-     * knows WHY — offline, signed out, rate limited. It is written plainly at
-     * the source ("Could not check GitHub for this report."), so restating it
-     * here would be a second copy free to drift into something less true.
+     * The message comes from whoever still cannot say — the lookup (offline,
+     * signed out, rate limited), an unreadable workspace, a resume that did not
+     * finish — and is shown as-is, because only that side knows WHY. It is
+     * written plainly at the source ("Could not check GitHub for this
+     * report."), so restating it here would be a second copy free to drift into
+     * something less true.
+     *
+     * What every source owes this frame is UNCERTAINTY: the sentence lands
+     * after "…is still pending", so a terminal one ("Could not file this
+     * report.") would be a verdict and a shrug in one row (#40). `filing.ts`
+     * holds up its end by replacing the create's own message with one written
+     * for here (`UNCONFIRMED`), rather than this frame second-guessing text it
+     * cannot see.
      */
     case 'pending':
       return {
