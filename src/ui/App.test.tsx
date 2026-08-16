@@ -1859,6 +1859,36 @@ describe('a report interrupted by a crash', () => {
     expect(await screen.findByDisplayValue(refined().title)).toBeTruthy();
   });
 
+  it('does not take the half-typed report off the screen when it lands', async () => {
+    /*
+     * The other half of story 29, and the half only the palette can prove: the
+     * reducer's refusal is a decision about a state value, while the thing QA
+     * had to watch by hand is whether a done screen appears OVER someone who is
+     * mid-sentence. A lookup that resolves twenty seconds in lands exactly here.
+     */
+    let landed!: () => void;
+    const wait = new Promise<void>((resolve) => (landed = resolve));
+    const services = fakeServices({
+      recover: vi.fn(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield { state: 'checking', filingId: 'fil_1' } as RecoveryEvent;
+          await wait;
+          yield { state: 'filed', filingId: 'fil_1', receipt: receipt({ issueNumber: 42 }) } as RecoveryEvent;
+        },
+      })),
+    });
+
+    await boot(services);
+    await type('the next thing that broke');
+    await act(async () => {
+      landed();
+      await wait;
+    });
+
+    expect(screen.queryByText('Issue #42 filed')).toBeNull();
+    expect(await screen.findByDisplayValue('the next thing that broke')).toBeTruthy();
+  });
+
   it('says nothing at all for a report it still cannot resolve', async () => {
     // Pending is NOT a failure, and the error card is where a Retry lives — so
     // an unresolved report must not land on one. The status surface it belongs
