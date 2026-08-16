@@ -186,8 +186,33 @@ Consequences worth knowing:
   from. Both paths build the done row from the receipt (`receiptEntry`).
 - **The palette shows a recovered report as Done only on an untouched capture
   box.** Recovery races the user; replacing what they are typing with a done
-  screen would be the interruption Quacket exists to avoid. The non-blocking
-  previous-report status with Check again is #29, still open.
+  screen would be the interruption Quacket exists to avoid.
+- **Everything else it has to say stands BESIDE the capture box** (#29). The
+  same persistent, non-blocking slot that carries broken `gh` auth carries one
+  row per unresolved report: still checking, still pending, filed, or safe to
+  try again — the four states `RecoveryEvent` distinguishes, each with at most
+  one action. `core/ui/recovery.ts` owns every word and every button, so what
+  the user reads is a pure function of the event and is tested as sentences; the
+  row never takes the window, so an old report can never be a wall in front of
+  the next capture. Three consequences that are load-bearing rather than
+  cosmetic:
+  - **`pending` offers a look, never a send.** Duplicate safety is unknown, so
+    the only button is [Check again], which re-runs the SAME `recover()` pass —
+    including for `failed`, where a direct resume would take the last run's
+    no-match on faith instead of re-proving it. The palette itself never calls
+    `file()` for a recovered report. That pass takes the Filing id the row
+    carries (`recover(only?)`), because an unscoped one would reconcile every
+    OTHER unresolved report from that click too — and a `failed` one gets
+    resumed, i.e. created on GitHub, by the pass that reaches it.
+  - **`checking` gets no button at all.** A lookup is already in flight, and the
+    honest next action is to keep capturing.
+  - **The status outlives the draft.** `recovery` sits outside every reset in
+    the reducer, so Discard and New report cannot take an unresolved report off
+    the screen — the same guarantee as a Filing workspace not being the draft
+    slot, spelled at the layer that draws it. A conclusion reached while the
+    window is hidden raises an OS notification (success AND failure); an
+    ordinary visible submit still raises none, because the done screen is its
+    confirmation.
 
 ## Module map
 
@@ -213,7 +238,7 @@ src/core/                     no IO, no DOM — everything injected
                               merely BROKE degrades to the CLI default, uncached.
   github/        4 tests      GitHub DISCOVERY only: `gh auth status`, the repo list,
                               the open-issue list. Every `gh` WRITE moved to filing/.
-  filing/       77 tests      the Filing transaction: one verb (`file`) from a final
+  filing/       79 tests      the Filing transaction: one verb (`file`) from a final
                               draft to a durable receipt. Assigns an opaque identity
                               before the first remote write and carries it in the
                               body as a hidden HTML comment; takes the draft
@@ -234,8 +259,11 @@ src/core/                     no IO, no DOM — everything injected
                               writes the final draft.json, and RENAMES the directory
                               into a Filing workspace. No copy, and no draft is ever
                               in two places.
-  ui/           94 tests      reducer.ts (pure stage machine; effects come back as
-                              data) + onboarding.ts. `MachineState` (gh + providers)
+  ui/          109 tests      reducer.ts (pure stage machine; effects come back as
+                              data) + recovery.ts (what the palette SAYS about an
+                              unfinished report, and which single button it gets —
+                              pure, so the copy is tested rather than read off the
+                              .tsx) + onboarding.ts. `MachineState` (gh + providers)
                               is split from `DetectedState` on purpose: it is exactly
                               the part no palette control can change, so the cards
                               derive from re-detected machine state and settings live
@@ -252,8 +280,8 @@ src/ui/                       React. Renders the reducer, performs its effects.
   main.tsx                    entry: builds Platform, composes both service layers.
                               The one .tsx that imports Tauri directly — it IS the
                               platform edge; App.tsx and below stay host-agnostic.
-  App.tsx       84 tests      reducer host + effect performer + keyboard owner
-  components/  198 tests      services.ts (UI-facing port over src/app) + keymap /
+  App.tsx       88 tests      reducer host + effect performer + keyboard owner
+  components/  200 tests      services.ts (UI-facing port over src/app) + keymap /
                               fuzzy / format / session / host / notify / settings —
                               every real decision lives in a pure .ts module.
                               Picker.tsx is the ONLY file that writes a `<select>`;

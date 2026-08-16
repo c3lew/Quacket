@@ -1114,12 +1114,19 @@ export function createFiling({ runner, files, drafts, baseDir, ...options }: Fil
      * limited, a half-read listing, a resume that failed again — is an EVENT,
      * because a throw would take the rest of the queue down with it and turn a
      * network blip into an app that cannot start.
+     *
+     * `only` narrows the pass to ONE Filing, which is what a [Check again]
+     * sitting on one status row means. Without it that button re-reconciles
+     * every other unresolved report too — and for one with durable evidence
+     * nothing was created, that pass can go on to CREATE it. Duplicate-safe,
+     * but a remote write nobody asked for from a button on a different row.
      */
-    async *recover(): AsyncGenerator<RecoveryEvent> {
+    async *recover(only?: string): AsyncGenerator<RecoveryEvent> {
       // No folder, or a folder we cannot read: nothing to recover, and nothing
       // worth reporting — there is no Filing here to be uncertain about.
       const ids = await files.list(root).catch(() => null);
       for (const id of ids ?? []) {
+        if (only !== undefined && id !== only) continue;
         /*
          * A second pass over a Filing the first pass is still working on would
          * make its own no-match decision and resume the same Filing again — two

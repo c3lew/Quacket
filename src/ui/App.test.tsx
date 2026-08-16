@@ -1889,10 +1889,13 @@ describe('a report interrupted by a crash', () => {
     expect(await screen.findByDisplayValue('the next thing that broke')).toBeTruthy();
   });
 
-  it('says nothing at all for a report it still cannot resolve', async () => {
-    // Pending is NOT a failure, and the error card is where a Retry lives — so
-    // an unresolved report must not land on one. The status surface it belongs
-    // on is #29; until then it stays quiet rather than pretending.
+  it('shows a report it cannot resolve as a status beside the capture box', async () => {
+    /*
+     * Story 14. Pending is NOT a failure, so it must not land on the error card,
+     * where [Retry] lives — a blind retry while duplicate safety is unknown is
+     * how a report gets filed twice. It gets its own calm row instead, and the
+     * capture box behind it stays exactly as usable as it was.
+     */
     const services = fakeServices({
       recover: vi.fn(() =>
         recovered([
@@ -1904,8 +1907,100 @@ describe('a report interrupted by a crash', () => {
 
     await boot(services);
 
-    expect(await screen.findByPlaceholderText(CAPTURE_BOX)).toBeTruthy();
-    expect(screen.queryByText(/Could not check GitHub/)).toBeNull();
-    expect(screen.queryByRole('button', { name: /Try again/ })).toBeNull();
+    expect(await screen.findByText(/still pending/)).toBeVisible();
+    expect(screen.getByText(/Could not check GitHub/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: /^Retry/ })).toBeNull();
+
+    // Story 14 proper: the capture box beside it still takes a whole report.
+    await type('the next thing that broke');
+    await click(/Refine/);
+    expect(await screen.findByDisplayValue(refined().title)).toBeTruthy();
+    // And the status is still there — it belongs to a different report.
+    expect(screen.getByText(/still pending/)).toBeVisible();
+  });
+
+  it('re-asks GitHub when the user presses Check again, and updates what it says', async () => {
+    // Story 13: the fix for a pending report is connectivity or a sign-in coming
+    // back, and neither one tells Quacket. So the user gets to say "now".
+    let pass = 0;
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        recovered(
+          pass++ === 0
+            ? [{ state: 'pending', filingId: 'fil_1', message: 'Could not check GitHub for this report.' }]
+            : [{ state: 'filed', filingId: 'fil_1', receipt: receipt({ issueNumber: 42 }) }],
+        ),
+      ),
+    });
+
+    await boot(services);
+    await type('the next thing that broke');
+    await screen.findByText(/still pending/);
+
+    await click('Check again');
+
+    expect(await screen.findByText(/was filed as issue #42/)).toBeVisible();
+    expect(screen.queryByText(/still pending/)).toBeNull();
+    // A read, still: the pass re-proves the remote side, the palette never files.
+    expect(services.file).not.toHaveBeenCalled();
+    // And it asked about THIS report only. An unscoped pass would reconcile every
+    // other unresolved one — and could resume, i.e. CREATE, a report on GitHub
+    // from a click the user aimed at a different row. Boot asks about all.
+    expect(services.recover).toHaveBeenNthCalledWith(1, undefined);
+    expect(services.recover).toHaveBeenNthCalledWith(2, 'fil_1');
+  });
+
+  it('never lets anything the user does to the new report take the old one away', async () => {
+    /*
+     * Story 15, from the only side a user can see it: the new Draft and the
+     * unresolved Filing are different things on disk, so typing, discarding and
+     * starting over cannot reach the older report — the status row outlives all
+     * three.
+     */
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        recovered([
+          { state: 'pending', filingId: 'fil_1', message: 'Could not check GitHub for this report.' },
+        ]),
+      ),
+    });
+
+    await boot(services);
+    await screen.findByText(/still pending/);
+    await type('the next thing that broke');
+    await click(/Discard/);
+
+    expect(await screen.findByDisplayValue('')).toBeTruthy();
+    expect(screen.getByText(/still pending/)).toBeVisible();
+    expect(services.discardDraft).toHaveBeenCalled();
+  });
+
+  it('offers a way to see a report that finished while the user was busy', async () => {
+    // The done screen is refused on a palette in use (above), so this row is the
+    // ONLY place a recovered success gets said. Without it, the news is lost.
+    let landed!: () => void;
+    const wait = new Promise<void>((resolve) => (landed = resolve));
+    const services = fakeServices({
+      recover: vi.fn(() => ({
+        async *[Symbol.asyncIterator]() {
+          await wait;
+          yield { state: 'filed', filingId: 'fil_1', receipt: receipt({ issueNumber: 42 }) } as RecoveryEvent;
+        },
+      })),
+    });
+
+    await boot(services);
+    await type('the next thing that broke');
+    await act(async () => {
+      landed();
+      await wait;
+    });
+    await screen.findByText(/was filed as issue #42/);
+
+    await click('View on GitHub');
+
+    expect(services.openUrl).toHaveBeenCalledWith('https://github.com/c3lew/Quacket/issues/7');
+    // Read is read: the row retires rather than nagging for the rest of the session.
+    await waitFor(() => expect(screen.queryByText(/was filed as issue #42/)).toBeNull());
   });
 });

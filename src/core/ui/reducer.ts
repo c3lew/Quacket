@@ -8,7 +8,9 @@
  * effects it is handed.
  */
 
+import type { RecoveryEvent } from '../filing/filing.ts';
 import { TITLE_MAX_CHARS } from '../refine/schema.ts';
+import { recoveryAlert, upsertRecovery } from './recovery.ts';
 import type {
   Draft,
   ImageAttachment,
@@ -51,7 +53,7 @@ export interface Editing {
 export type Failure = NonNullable<Draft['lastError']>;
 
 /** The recovery buttons a failure offers. The failure matrix, as a value. */
-export type Recovery = 'retry' | 'file-as-is' | 'file-without-images';
+export type FailureOption = 'retry' | 'file-as-is' | 'file-without-images';
 
 export interface UiState {
   stage: Stage;
@@ -76,11 +78,32 @@ export interface UiState {
    * belongs to Filing, not to the draft slot (`shouldSaveDraft`).
    */
   filingId: string | null;
+  /**
+   * Reports a PREVIOUS run did not finish filing — the latest word on each, in
+   * the order they were heard of.
+   *
+   * Deliberately outside every reset. Discard, New report and the whole capture
+   * stage belong to the report the user is writing NOW; an unresolved Filing
+   * belongs to one that is already frozen on disk, and no key the user presses
+   * on this side may make it disappear. That is the same guarantee one layer up
+   * (a Filing workspace is not the draft slot), spelled at the layer that draws
+   * it.
+   */
+  recovery: RecoveryEvent[];
 }
 
-export const initialState = (): UiState => ({
+/**
+ * Everything a new report starts from — which is every field of `UiState`
+ * EXCEPT the two that outlive one: whether the window is hidden, and what
+ * recovery has to say about a previous run's reports.
+ *
+ * The return type is spelled out rather than inferred on purpose. It is the
+ * only thing that makes the compiler complain when a new field is added to
+ * `UiState` and not reset here — and a draft field that silently survived
+ * Discard would be work the user deliberately threw away coming back.
+ */
+const blank = (): Omit<UiState, 'hidden' | 'recovery'> => ({
   stage: 'input',
-  hidden: false,
   width: PALETTE_WIDTH,
   raw: '',
   images: [],
@@ -92,6 +115,8 @@ export const initialState = (): UiState => ({
   result: null,
   filingId: null,
 });
+
+export const initialState = (): UiState => ({ ...blank(), hidden: false, recovery: [] });
 
 // ── Actions & effects ───────────────────────────────────────────────────────
 
@@ -119,8 +144,10 @@ export type Action =
   /** `filingId` is present whenever the failure came from a started Filing. */
   | { type: 'submit-failed'; error: Failure; filingId?: string }
   | { type: 'file-without-images' }
-  /** A report from a previous run that startup recovery proved is on GitHub. */
-  | { type: 'recovered'; result: SubmitResult }
+  /** One word from startup recovery about one report a previous run left behind. */
+  | { type: 'recovery'; event: RecoveryEvent }
+  /** The user has read a recovery status and acted on it; the row goes away. */
+  | { type: 'dismiss-recovery'; filingId: string }
   | { type: 'discard' }
   | { type: 'new-report' };
 
@@ -158,7 +185,7 @@ export interface Next {
  * stage is the submit leg, where a refined draft already exists and "file my raw
  * text instead" is never an offer worth making.
  */
-export const recoveryOptions = (failure: Failure, stage: Stage): Recovery[] => {
+export const failureOptions = (failure: Failure, stage: Stage): FailureOption[] => {
   // The LLM is an enhancement, never a gatekeeper.
   if (stage === 'input') return ['retry', 'file-as-is'];
   return failure.kind === 'upload_failed' ? ['retry', 'file-without-images'] : ['retry'];
@@ -466,24 +493,55 @@ export function reduce(state: UiState, action: Action): Next {
       };
 
     /**
-     * A report interrupted by a crash, coming back as Done.
+     * A report interrupted by a crash, saying where it got to.
      *
-     * Startup recovery asked GitHub and got a receipt, so this is the same
-     * terminal outcome a live submit produces — and it lands on the same screen,
-     * because "it went out after all" is not a special state the user should
-     * have to learn.
+     * ONE action for all four states, because they are one row changing its
+     * mind, and the only branch that matters is where the news lands:
      *
-     * It only lands on an UNTOUCHED palette. Recovery races the user: a lookup
-     * that takes twenty seconds resolves long after they have started typing the
-     * next report, and replacing what they are writing with a done screen would
-     * be the interruption Quacket exists to avoid. Nothing is lost when it is
-     * refused — the receipt is durable, and the previous-report status (#29) is
-     * where a recovery the user was too busy to see belongs.
+     * - **An untouched palette absorbs a `filed`.** Recovery asked GitHub and
+     *   got a receipt, so this is the same terminal outcome a live submit
+     *   produces and it lands on the same screen — "it went out after all" is
+     *   not a state the user should have to learn. The status row is dropped
+     *   rather than kept, because the Done screen in front of them already says
+     *   it, and saying it twice is two reports as far as a reader can tell.
+     * - **Everything else becomes a status row.** Recovery races the user: a
+     *   lookup that takes twenty seconds resolves long after they started typing
+     *   the next report, and replacing what they are writing with a done screen
+     *   would be the interruption Quacket exists to avoid. So it stands beside
+     *   the capture box instead of over it, and blocks nothing.
+     *
+     * The notification is bounded to a HIDDEN palette and to the two states that
+     * are actually a conclusion (`recoveryAlert`). A conclusion that arrives
+     * while the window is in the tray is the one the user can never see on their
+     * own; a `pending` toast on every offline launch would be a nag.
      */
-    case 'recovered':
-      return state.stage === 'input' && !hasDraft(state)
-        ? only({ ...state, stage: 'done', result: action.result })
-        : only(state);
+    case 'recovery': {
+      const event = action.event;
+      const alert = recoveryAlert(event);
+      // Shared by both exits: a hidden palette that absorbs the news onto the
+      // done screen still has to say so out loud, because nobody is looking.
+      const effects: Effect[] =
+        state.hidden && alert !== null ? [{ type: 'notify', message: alert }] : [];
+
+      if (event.state === 'filed' && state.stage === 'input' && !hasDraft(state)) {
+        return {
+          state: {
+            ...state,
+            stage: 'done',
+            result: event.receipt,
+            recovery: state.recovery.filter((e) => e.filingId !== event.filingId),
+          },
+          effects,
+        };
+      }
+      return { state: { ...state, recovery: upsertRecovery(state.recovery, event) }, effects };
+    }
+
+    case 'dismiss-recovery':
+      return only({
+        ...state,
+        recovery: state.recovery.filter((e) => e.filingId !== action.filingId),
+      });
 
     /**
      * The ONLY deliberate way to lose work, and the only thing in the machine
@@ -498,15 +556,17 @@ export function reduce(state: UiState, action: Action): Next {
     case 'discard':
       return canDiscard(state)
         ? {
-            state: { ...initialState(), hidden: state.hidden },
+            // `recovery` rides through: Discard deletes the draft folder, and an
+            // unresolved Filing is not in it. A previous report that vanished
+            // because the user threw away an unrelated one would be the exact
+            // "my report disappeared" story this whole slice exists to end.
+            state: { ...state, ...blank() },
             effects: [{ type: 'discard-draft' }],
           }
         : only(state);
 
     /** Gated on the done screen — the draft slot frees only on confirmed success. */
     case 'new-report':
-      return state.stage !== 'done'
-        ? only(state)
-        : only({ ...initialState(), hidden: state.hidden });
+      return state.stage !== 'done' ? only(state) : only({ ...state, ...blank() });
   }
 }

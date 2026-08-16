@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { FilingReceipt } from '../filing/filing.ts';
 import { TITLE_MAX_CHARS } from '../refine/schema.ts';
 import type { ImageAttachment, RefinedDraft } from '../types.ts';
 import {
@@ -9,7 +10,7 @@ import {
   hasDraft,
   initialState,
   isCommenting,
-  recoveryOptions,
+  failureOptions,
   reduce,
   similarCandidates,
   type Action,
@@ -251,7 +252,7 @@ describe('failure matrix', () => {
     }).state;
 
     expect(failed.stage).toBe('input');
-    expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-as-is']);
+    expect(failureOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-as-is']);
   });
 
   it('files as-is with the raw text as the body and the first line as the title', () => {
@@ -304,7 +305,7 @@ describe('failure matrix', () => {
     );
 
     expect(failed.stage).toBe('draft');
-    expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-without-images']);
+    expect(failureOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-without-images']);
   });
 
   it('files without images by dropping them and resubmitting', () => {
@@ -388,7 +389,7 @@ describe('failure matrix', () => {
       atDraft(),
     );
 
-    expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry']);
+    expect(failureOptions(failed.failure!, failed.stage)).toEqual(['retry']);
   });
 
   /**
@@ -720,8 +721,8 @@ describe('recovery is offered per leg, not per error kind', () => {
     );
 
     expect(failed.stage).toBe('draft');
-    expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry']);
-    expect(recoveryOptions(failed.failure!, failed.stage)).not.toContain('file-as-is');
+    expect(failureOptions(failed.failure!, failed.stage)).toEqual(['retry']);
+    expect(failureOptions(failed.failure!, failed.stage)).not.toContain('file-as-is');
   });
 
   it('still offers the escape hatch when the same kind kills a refine', () => {
@@ -730,7 +731,7 @@ describe('recovery is offered per leg, not per error kind', () => {
     );
 
     expect(failed.stage).toBe('input');
-    expect(recoveryOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-as-is']);
+    expect(failureOptions(failed.failure!, failed.stage)).toEqual(['retry', 'file-as-is']);
   });
 
   it('clears a dead submit’s failure when the user goes back to edit', () => {
@@ -773,13 +774,33 @@ describe('file-as-is claims no classification it does not have', () => {
 // ── Startup recovery ────────────────────────────────────────────────────────
 
 describe('a report recovered after a crash', () => {
-  const result = { url: 'https://github.com/c3lew/Quacket/issues/42', issueNumber: 42 };
+  const receipt = (over: Partial<FilingReceipt> = {}): FilingReceipt => ({
+    url: 'https://github.com/c3lew/Quacket/issues/42',
+    issueNumber: 42,
+    filingId: 'fil_1',
+    repo: 'c3lew/Quacket',
+    target: { kind: 'new-issue' },
+    title: 'Tray icon disappears',
+    ...over,
+  });
+
+  const filed = (over: Partial<FilingReceipt> = {}): Action => ({
+    type: 'recovery',
+    event: { state: 'filed', filingId: over.filingId ?? 'fil_1', receipt: receipt(over) },
+  });
+
+  const pending = (filingId = 'fil_1'): Action => ({
+    type: 'recovery',
+    event: { state: 'pending', filingId, message: 'Could not check GitHub for this report.' },
+  });
 
   it('lands on Done, the same screen a live submit reaches', () => {
-    const state = run([{ type: 'recovered', result }]);
+    const state = run([filed()]);
 
     expect(state.stage).toBe('done');
-    expect(state.result).toEqual(result);
+    expect(state.result?.issueNumber).toBe(42);
+    // Absorbed, not doubled: the Done screen already says it.
+    expect(state.recovery).toEqual([]);
   });
 
   it('leaves a report the user is already typing exactly where it is', () => {
@@ -787,16 +808,105 @@ describe('a report recovered after a crash', () => {
     // replacing what they are writing with a done screen is the interruption
     // Quacket exists to avoid.
     const typing = run([{ type: 'edit-raw', raw: 'the next thing that broke' }]);
-    const state = run([{ type: 'recovered', result }], typing);
+    const state = run([filed()], typing);
 
     expect(state.stage).toBe('input');
     expect(state.raw).toBe('the next thing that broke');
     expect(state.result).toBeNull();
+    // Refused as a screen, kept as a status — the news is not thrown away.
+    expect(state.recovery).toHaveLength(1);
   });
 
   it('never overwrites a report mid-flight or already on screen', () => {
     for (const busy of [atDraft(), run([{ type: 'submit' }], atDraft())]) {
-      expect(run([{ type: 'recovered', result }], busy).stage).toBe(busy.stage);
+      expect(run([filed()], busy).stage).toBe(busy.stage);
     }
+  });
+
+  it('keeps one row per report, showing the latest word rather than a history', () => {
+    const state = run([
+      { type: 'edit-raw', raw: 'busy' },
+      { type: 'recovery', event: { state: 'checking', filingId: 'fil_1' } },
+      { type: 'recovery', event: { state: 'checking', filingId: 'fil_2' } },
+      pending('fil_1'),
+    ]);
+
+    expect(state.recovery.map((e) => [e.filingId, e.state])).toEqual([
+      ['fil_1', 'pending'],
+      ['fil_2', 'checking'],
+    ]);
+  });
+
+  it('survives everything the user can do to the report they are writing now', () => {
+    /*
+     * The point of story 15, at this layer: an unresolved Filing is frozen on
+     * disk and belongs to no draft, so nothing done to the new one — typing it,
+     * throwing it away, filing it and starting another — may make it vanish.
+     */
+    const withStatus = run([pending(), { type: 'edit-raw', raw: 'the next thing that broke' }]);
+    const discarded = run([{ type: 'discard' }], withStatus);
+
+    expect(discarded.raw).toBe('');
+    expect(discarded.recovery).toEqual(withStatus.recovery);
+
+    const afterSend = run(
+      [{ type: 'submit-ok', result: { url: 'u', issueNumber: 9 } }, { type: 'new-report' }],
+      run([{ type: 'submit' }], run([pending()], atDraft())),
+    );
+    expect(afterSend.recovery).toHaveLength(1);
+  });
+
+  it('retires a row once the user has acted on it', () => {
+    const state = run([pending(), { type: 'dismiss-recovery', filingId: 'fil_1' }]);
+
+    expect(state.recovery).toEqual([]);
+  });
+
+  // ── The tray notification ────────────────────────────────────────────────
+
+  const hidden = (from: UiState = initialState()): UiState => run([{ type: 'esc' }], from);
+
+  it('tells a user who walked away how both kinds of conclusion ended', () => {
+    expect(effectsOf(hidden(), filed())).toEqual([
+      { type: 'notify', message: 'Your report from last time was filed as issue #42.' },
+    ]);
+    expect(
+      effectsOf(hidden(), {
+        type: 'recovery',
+        event: { state: 'failed', filingId: 'fil_1', kind: 'upload_failed', message: 'x' },
+      }),
+    ).toEqual([
+      { type: 'notify', message: 'Your report from last time was not sent. Open Quacket to try again.' },
+    ]);
+  });
+
+  it('still says it out loud when the done screen it lands on is in the tray', () => {
+    // The absorbing path and the notifying path are not alternatives: a hidden
+    // palette gets both, because nobody is looking at the screen it landed on.
+    const next = reduce(hidden(), filed());
+
+    expect(next.state.stage).toBe('done');
+    expect(next.effects).toHaveLength(1);
+  });
+
+  it('stays quiet for a report that has not concluded, however often it is checked', () => {
+    // A laptop that is simply offline resolves to `pending` on every launch. A
+    // toast for that is a nag about news that has not happened.
+    expect(effectsOf(hidden(), pending())).toEqual([]);
+    expect(effectsOf(hidden(), { type: 'recovery', event: { state: 'checking', filingId: 'fil_1' } })).toEqual(
+      [],
+    );
+  });
+
+  it('stays quiet while the palette is on screen — the row is already visible', () => {
+    expect(effectsOf(initialState(), filed())).toEqual([]);
+  });
+
+  it('adds no notification to an ordinary submit, hidden or not', () => {
+    const result = { url: 'https://github.com/c3lew/Quacket/issues/9', issueNumber: 9 };
+    const flying = run([{ type: 'submit' }], atDraft());
+
+    expect(effectsOf(flying, { type: 'submit-ok', result })).toEqual([]);
+    expect(effectsOf(hidden(flying), { type: 'submit-ok', result })).toEqual([]);
   });
 });

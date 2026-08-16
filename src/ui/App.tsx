@@ -36,8 +36,9 @@ import {
   similarCandidates,
   type Action,
   type Effect,
-  type Recovery,
+  type FailureOption,
 } from './../core/ui/reducer.ts';
+import { recoveryNotice } from './../core/ui/recovery.ts';
 import type { Thread } from './../core/llm/index.ts';
 import type { FilingCommand, FilingDecision } from './../core/filing/filing.ts';
 import { filingIdOf, hotkeyKeys, settingsNoticeText, toFailure } from './components/format.ts';
@@ -499,23 +500,31 @@ export function App({ services }: AppProps) {
    * joined to detection, and `recover` never rejects — so the worst a dead
    * network can do is leave an old report unresolved until the next launch.
    *
-   * Only `filed` is acted on today: a report that turned out to have reached
-   * GitHub comes back as Done, which is the whole of story 30. `pending` and
-   * `failed` are what the previous-report status (#29) will render; until then
-   * they resolve silently on disk rather than interrupting a user who has moved
-   * on, which is the same posture as leaving the palette untouched above.
+   * Every event reaches the machine, which decides between the Done screen and a
+   * status row beside the capture box (`recovery` in the reducer). The one thing
+   * that stays here is the recent-reports list, because it is the palette's own
+   * memory and not part of the stage machine.
+   *
+   * The SAME pass is what [Check again] and [Try again] re-run, narrowed to the
+   * one report the button sits on — recovery is a read that re-proves the remote
+   * side before it creates anything, so there is no second, blinder path from a
+   * button to `file()`. `recover()` skips any Filing a pass is still working on,
+   * so a second call can never double-create.
    */
-  useEffect(() => {
-    void (async () => {
-      for await (const event of services.recover()) {
-        if (event.state !== 'filed') continue;
+  const runRecovery = useCallback(async (filingId?: string) => {
+    for await (const event of services.recover(filingId)) {
+      if (event.state === 'filed') {
         const entry = receiptEntry(event.receipt);
         setLastSent(entry);
         setRecent((list) => pushRecent(list, entry));
-        act({ type: 'recovered', result: event.receipt });
       }
-    })();
+      act({ type: 'recovery', event });
+    }
   }, [act, services]);
+
+  useEffect(() => {
+    void runRecovery();
+  }, [runRecovery]);
 
   // The window is long-lived, so a mounted-once clock would drift for days.
   useEffect(() => {
@@ -917,10 +926,11 @@ export function App({ services }: AppProps) {
     [commitSettings],
   );
 
-  const recover = useCallback(
-    (recovery: Recovery) => {
-      if (recovery === 'retry') act({ type: state.stage === 'input' ? 'refine' : 'submit' });
-      else if (recovery === 'file-as-is') act({ type: 'file-as-is' });
+  /** The failure card's buttons. Unrelated to startup recovery — see `runRecovery`. */
+  const chooseFailureOption = useCallback(
+    (option: FailureOption) => {
+      if (option === 'retry') act({ type: state.stage === 'input' ? 'refine' : 'submit' });
+      else if (option === 'file-as-is') act({ type: 'file-as-is' });
       else act({ type: 'file-without-images' });
     },
     [act, state.stage],
@@ -968,15 +978,13 @@ export function App({ services }: AppProps) {
                   ? 'The GitHub command line tool is missing, so issues cannot be filed.'
                   : 'Your GitHub sign-in has expired, so issues cannot be filed.',
               command: warning.command,
-              actionLabel: 'Check again',
-              onAction: () => void recheck(),
+              action: { label: 'Check again', onAction: () => void recheck() },
             }
           : {
               id: 'ai-cli',
               text: 'No AI assistant is ready, so reports cannot be refined. You can still file your raw text.',
               ...(warning.fixes[0] === undefined ? {} : { command: warning.fixes[0].command }),
-              actionLabel: 'Check again',
-              onAction: () => void recheck(),
+              action: { label: 'Check again', onAction: () => void recheck() },
             },
       );
     }
@@ -987,8 +995,7 @@ export function App({ services }: AppProps) {
       list.push({
         id: 'repos',
         text: `Your repo list could not be loaded. ${reposError}`,
-        actionLabel: 'Try again',
-        onAction: () => void loadRepos(settingsRef.current.lastRepo, setReposError),
+        action: { label: 'Try again', onAction: () => void loadRepos(settingsRef.current.lastRepo, setReposError) },
       });
     }
 
@@ -1005,8 +1012,7 @@ export function App({ services }: AppProps) {
       list.push({
         id: 'draft',
         text: 'Your saved report could not be reopened, so this is a fresh start.',
-        actionLabel: 'Got it',
-        onAction: () => setDraftLost(false),
+        action: { label: 'Got it', onAction: () => setDraftLost(false) },
       });
     }
 
@@ -1026,8 +1032,7 @@ export function App({ services }: AppProps) {
               ? 'Your screenshot could not be saved, so it is not in your report.'
               : `${attachError.images.length} screenshots could not be saved, so they are not in your report.`
           } ${attachError.message}`,
-        actionLabel: 'Try again',
-        onAction: () => void addImages(attachError.images),
+        action: { label: 'Try again', onAction: () => void addImages(attachError.images) },
       });
     }
 
@@ -1042,8 +1047,7 @@ export function App({ services }: AppProps) {
       list.push({
         id: 'annotate',
         text: `Your marked-up screenshot could not be saved, so your changes are not in your report yet. ${annotateError.message}`,
-        actionLabel: 'Try again',
-        onAction: () => void saveAnnotation(annotateError.bytes),
+        action: { label: 'Try again', onAction: () => void saveAnnotation(annotateError.bytes) },
       });
     }
 
@@ -1061,8 +1065,7 @@ export function App({ services }: AppProps) {
         text: `${
           readError.source.names.length === 0 ? 'Your screenshot' : imageNames(readError.source.names)
         } could not be added. ${readError.message}`,
-        actionLabel: 'Try again',
-        onAction: () => void addFrom(readError.source),
+        action: { label: 'Try again', onAction: () => void addFrom(readError.source) },
       });
     }
 
@@ -1072,8 +1075,7 @@ export function App({ services }: AppProps) {
         // Through `hotkeyKeys`, so the banner names keys ("Ctrl+=") and never
         // leaks the CmdOrCtrl registration token (#23).
         text: `${hotkeyKeys(conflict.hotkey).join('+')} is already taken by another app, so it will not open Quacket.`,
-        actionLabel: 'Change shortcut',
-        onAction: () => setView('settings'),
+        action: { label: 'Change shortcut', onAction: () => setView('settings') },
       });
     }
 
@@ -1086,8 +1088,50 @@ export function App({ services }: AppProps) {
           settingsNotice,
           detected?.providers.find((p) => p.provider === settings.provider)?.models ?? [],
         ),
-        actionLabel: 'Got it',
-        onAction: () => setSettingsNotice(null),
+        action: { label: 'Got it', onAction: () => setSettingsNotice(null) },
+      });
+    }
+
+    /*
+     * A report a previous run could not finish, one row each, standing BESIDE
+     * the capture box rather than in front of it (#29). It is the same slot the
+     * rest of this list uses precisely because that slot is already the app's
+     * one persistent non-blocking surface: nothing here takes the window, so an
+     * unresolved report can never be a wall between the user and the next
+     * capture.
+     *
+     * Every word and every button comes from `recoveryNotice`, which is pure and
+     * tested. Its action carries everything acting on it needs — the url to open,
+     * the id to re-check — so this switch reads the KIND and nothing else. Going
+     * back to the event to find the url is what would let a mis-narrowed branch
+     * put a "View on GitHub" label on a handler that quietly re-runs a lookup.
+     */
+    for (const event of state.recovery) {
+      const { text, tone, action } = recoveryNotice(event);
+      list.push({
+        id: `recovery-${event.filingId}`,
+        text,
+        tone,
+        ...(action === null
+          ? {}
+          : {
+              action: {
+                label: action.label,
+                onAction:
+                  action.kind === 'open'
+                    ? () => {
+                        // Opened is read: the news has been delivered, so the row
+                        // retires rather than sitting there for the rest of the
+                        // session pretending there is still something to do.
+                        void services.openUrl(action.url);
+                        act({ type: 'dismiss-recovery', filingId: event.filingId });
+                      }
+                    : // Scoped to THIS report: a [Check again] that also
+                      // reconciled the row below it could resume and CREATE that
+                      // one, from a click the user aimed somewhere else.
+                      () => void runRecovery(action.filingId),
+              },
+            }),
       });
     }
 
@@ -1097,13 +1141,13 @@ export function App({ services }: AppProps) {
       list.push({
         id: 'update',
         text: `Quacket ${updateVersion} is ready to install.`,
-        actionLabel: 'Update now',
-        onAction: () => void services.installUpdate(),
+        action: { label: 'Update now', onAction: () => void services.installUpdate() },
       });
     }
 
     return list;
   }, [
+    act,
     addFrom,
     addImages,
     annotateError,
@@ -1115,11 +1159,13 @@ export function App({ services }: AppProps) {
     loadRepos,
     recheck,
     reposError,
+    runRecovery,
     saveAnnotation,
     settings.provider,
     settingsNotice,
     setupWarnings,
     services,
+    state.recovery,
     updateVersion,
   ]);
 
@@ -1247,7 +1293,7 @@ export function App({ services }: AppProps) {
           onAnswer={(index, text) => act({ type: 'answer', index, text })}
           onChooseSimilar={(issueNumber) => act({ type: 'choose-similar', issueNumber })}
           onOpenIssue={(issueNumber) => void openIssueInBrowser(issueNumber)}
-          onRecover={recover}
+          onRecover={chooseFailureOption}
         />
       );
     }
@@ -1256,7 +1302,7 @@ export function App({ services }: AppProps) {
       <>
         {/* A refine failure banners over the input, offering the refine leg's matrix. */}
         {state.failure !== null && state.stage === 'input' && (
-          <ErrorCard failure={state.failure} stage={state.stage} onRecover={recover} />
+          <ErrorCard failure={state.failure} stage={state.stage} onRecover={chooseFailureOption} />
         )}
         <Capture
           raw={state.raw}

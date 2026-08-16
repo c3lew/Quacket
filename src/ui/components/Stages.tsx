@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 
 import type { ImageAttachment, RefinedDraft, ReportType, SimilarIssue, Stage } from '../../core/types.ts';
-import { recoveryOptions, type Failure, type Recovery } from '../../core/ui/reducer.ts';
+import { failureOptions, type Failure, type FailureOption } from '../../core/ui/reducer.ts';
 import { Icon, Spinner, type IconName } from './icons.tsx';
 import type { SentEntry } from './session.ts';
 
@@ -268,7 +268,7 @@ function FollowUps({
   );
 }
 
-const RECOVERY_LABELS: Record<Recovery, string> = {
+const FAILURE_LABELS: Record<FailureOption, string> = {
   retry: 'Try again',
   'file-as-is': 'File my raw text instead',
   'file-without-images': 'File without the screenshots',
@@ -278,7 +278,7 @@ const RECOVERY_LABELS: Record<Recovery, string> = {
  * The failure matrix, rendered. Which buttons appear is the reducer's call.
  *
  * `stage` is passed because the matrix is keyed on the leg that died, and only
- * the stage knows which one that was — see `recoveryOptions`.
+ * the stage knows which one that was — see `failureOptions`.
  */
 export function ErrorCard({
   failure,
@@ -287,7 +287,7 @@ export function ErrorCard({
 }: {
   failure: Failure;
   stage: Stage;
-  onRecover: (recovery: Recovery) => void;
+  onRecover: (option: FailureOption) => void;
 }) {
   return (
     <div className="errorcard">
@@ -297,13 +297,13 @@ export function ErrorCard({
       <div className="warn-main">
         <span>{failure.message}</span>
         <div className="err-actions">
-          {recoveryOptions(failure, stage).map((recovery, i) => (
+          {failureOptions(failure, stage).map((recovery, i) => (
             <button
               key={recovery}
               className={i === 0 ? 'btn primary' : 'btn'}
               onClick={() => onRecover(recovery)}
             >
-              {RECOVERY_LABELS[recovery]}
+              {FAILURE_LABELS[recovery]}
             </button>
           ))}
         </div>
@@ -332,7 +332,7 @@ export interface DraftViewProps {
    * known — `App`, the same one line the read-only issue list already uses.
    */
   onOpenIssue: (issueNumber: number) => void;
-  onRecover: (recovery: Recovery) => void;
+  onRecover: (option: FailureOption) => void;
 }
 
 export function DraftView(props: DraftViewProps) {

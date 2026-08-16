@@ -12,13 +12,17 @@
  *    or the visually-empty area silently refuses to drag;
  *  - no interactive control may carry it, or clicking that control starts a
  *    drag instead of doing its job.
+ *
+ * Plus the shell's other permanent surface, the warning slot, which now carries
+ * rows that are not warnings at all (#29) — so what it must NOT do is make them
+ * all look alike.
  */
 
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Header, type HeaderProps } from './Palette.tsx';
+import { Header, WarningSlot, type HeaderProps } from './Palette.tsx';
 
 afterEach(cleanup);
 
@@ -91,5 +95,41 @@ describe('the header is the undecorated window\'s drag handle', () => {
     const handlers = show('issues');
     fireEvent.click(screen.getByText('Back'));
     expect(handlers.onBack).toHaveBeenCalledOnce();
+  });
+});
+
+describe('the one persistent, non-blocking slot', () => {
+  it('carries a row that has nothing to offer yet without inventing a button', () => {
+    render(
+      <WarningSlot
+        warnings={[{ id: 'a', text: 'Still checking your report from last time…', tone: 'busy' }]}
+        onCopy={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Still checking/)).toBeVisible();
+    // Not a disabled button, not a dead "Check again" — no button at all. A
+    // control that cannot work is a lie the user tries to click.
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('does not dress news that is not a problem as one', () => {
+    const { container } = render(
+      <WarningSlot
+        warnings={[
+          { id: 'good', text: 'Your report from last time was filed as issue #42.', tone: 'good' },
+          {
+            id: 'bad',
+            text: 'Your GitHub sign-in has expired.',
+            action: { label: 'Check again', onAction: vi.fn() },
+          },
+        ]}
+        onCopy={vi.fn()}
+      />,
+    );
+
+    // Same slot, same shape — a different tone, so they never read as one thing.
+    expect(container.querySelector('.warning.good')).not.toBeNull();
+    expect(container.querySelector('.warning.warn')).not.toBeNull();
   });
 });

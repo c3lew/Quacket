@@ -338,10 +338,36 @@ kbd {
   border-radius: 8px;
 }
 
+/*
+ * A status that is not a problem must not wear a problem's colours. Same row,
+ * same geometry, same slot — only the ground and the mark change, so a calm
+ * "still checking" and an alarming "sign-in expired" are told apart at a glance
+ * rather than by reading both.
+ */
+.warning.busy,
+.warning.info {
+  background: var(--panel2);
+  border-bottom-color: var(--line);
+}
+
+.warning.good {
+  background: #16241d;
+  border-bottom-color: #26402f;
+}
+
 .warn-icon {
   color: var(--warn);
   display: flex;
   padding-top: 2px;
+}
+
+.warning.busy .warn-icon,
+.warning.info .warn-icon {
+  color: var(--mut);
+}
+
+.warning.good .warn-icon {
+  color: var(--ok);
 }
 
 .warn-main {

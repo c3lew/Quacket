@@ -100,8 +100,12 @@ export interface UiServices {
    * Iterated on its own at boot and never awaited by anything the capture box
    * needs, so a GitHub that is slow or gone costs a status line rather than a
    * palette. It never rejects — expected failures arrive as `pending` events.
+   *
+   * With a `filingId` it walks that ONE report, which is what a [Check again]
+   * on one status row means — and what keeps that button from re-reconciling,
+   * or resuming, a report it is not sitting on.
    */
-  recover(): AsyncIterable<RecoveryEvent>;
+  recover(filingId?: string): AsyncIterable<RecoveryEvent>;
 
   loadDraft(): Promise<Draft | null>;
   saveDraft(draft: Draft): Promise<void>;
@@ -263,7 +267,7 @@ export function createUiServices({ core, platform, runner }: UiServiceDeps): UiS
      * together with a durable receipt.
      */
     file: (command) => core.filing.file(command),
-    recover: () => core.filing.recover(),
+    recover: (filingId) => core.filing.recover(filingId),
 
     loadDraft: () => core.drafts.load(),
     saveDraft: (draft) => core.drafts.save(draft),

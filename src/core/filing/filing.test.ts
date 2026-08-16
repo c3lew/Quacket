@@ -1045,6 +1045,41 @@ describe('a pre-terminal failure', () => {
     );
   });
 
+  it('is untouchable from the next report — typing, attaching, and Discard all miss it', async () => {
+    /*
+     * Story 15, at the layer that decides it. An unresolved Filing owns its own
+     * frozen copy of the report, so the ONE thing the palette can delete —
+     * `DraftStore.discard`, the only route to a `discard-draft` effect — has
+     * nothing of it to delete. If this ever stops being true, a user who threw
+     * away an unrelated draft would silently lose a report GitHub may already
+     * have, and nothing downstream could tell.
+     */
+    const runner = scriptedRunner().on(
+      { cmd: 'gh', argsContain: ['issue', 'create'] },
+      { exitCode: 1, stderr: 'gh: Something went wrong (HTTP 502)' },
+    );
+    await withFiling(
+      async (h) => {
+        await expect(h.fileNew(draft({ raw: 'the report that was interrupted' }))).rejects.toBeTruthy();
+        const before = await h.snapshot('fil_1');
+
+        // The whole life of the next report, start to finish.
+        const next = draft({ id: 'draft_next', raw: 'the next thing that broke', images: [image('img_9')] });
+        await h.drafts.save(next);
+        await h.drafts.attachImage(next, image('img_9'));
+        await h.drafts.discard();
+
+        expect(await h.filings()).toEqual(['fil_1']);
+        expect(await h.snapshot('fil_1')).toEqual(before);
+        // And the frozen report itself is still there to be resumed from.
+        const frozen = await h.files.readText(joinPath(h.dir, 'filings', 'fil_1', 'draft', 'draft.json'));
+        expect(frozen).toContain('the report that was interrupted');
+        expect(await h.drafts.load()).toBeNull();
+      },
+      { runner },
+    );
+  });
+
   it('resumes the SAME identity rather than starting a second report', async () => {
     const runner = scriptedRunner().on(
       { cmd: 'gh', argsContain: ['issue', 'create'] },
@@ -1580,9 +1615,9 @@ describe('startup recovery', () => {
     body: `The icon is gone.\n${filingMarker(id)}\n`,
   });
 
-  const collect = async (filing: Filing): Promise<RecoveryEvent[]> => {
+  const collect = async (filing: Filing, only?: string): Promise<RecoveryEvent[]> => {
     const events: RecoveryEvent[] = [];
-    for await (const event of filing.recover()) events.push(event);
+    for await (const event of filing.recover(only)) events.push(event);
     return events;
   };
   const states = (events: RecoveryEvent[]): string[] => events.map((e) => e.state);
@@ -2129,6 +2164,31 @@ describe('startup recovery', () => {
         expect(createCalls(h.runner)).toHaveLength(1);
       },
       { files: lostReceipt() },
+    );
+  });
+
+  it('walks ONE report when asked for one, and leaves every other one alone', async () => {
+    /*
+     * What a [Check again] sitting on one status row means (#29). Unscoped, that
+     * button re-reconciles every other unresolved report too — and one with
+     * durable evidence nothing was created gets RESUMED by that pass, so a click
+     * aimed at row A creates row B's issue on GitHub.
+     */
+    const { files, unstick } = stuckCleanup();
+    await withFiling(
+      async (h) => {
+        await h.fileNew(draft({ id: 'draft_1' }));
+        await h.fileNew(draft({ id: 'draft_2' }));
+        expect((await h.filings()).sort()).toEqual(['fil_1', 'fil_2']);
+
+        unstick();
+        const events = await collect(h.restart(), 'fil_2');
+
+        expect(events.map((e) => e.filingId)).toEqual(['fil_2']);
+        // The one nobody asked about is untouched, still waiting for its turn.
+        expect(await h.filings()).toEqual(['fil_1']);
+      },
+      { files },
     );
   });
 
