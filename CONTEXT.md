@@ -351,7 +351,7 @@ from a file and ask **`tasklist`**, never the return value of the thing under te
 npm install
 
 npx tsc --noEmit                  # typecheck        → 0 errors
-npx vitest run                    # tests            → 768 passed, 30 files
+npx vitest run                    # tests            → 769 passed, 30 files
 npx vite build                    # frontend bundle  → succeeds
 cd src-tauri && cargo check       # Rust             → succeeds
 cd src-tauri && cargo test        # Rust             → 31 passed
