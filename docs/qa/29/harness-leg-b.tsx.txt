@@ -1,0 +1,231 @@
+/**
+ * THROWAWAY QA harness for #29, leg B: the real palette in a real browser.
+ *
+ * Mounts the shipped <App> with a hand-written UiServices. Nothing about the
+ * Tauri shell is involved — App imports nothing host-specific — so what is on
+ * screen is the real component tree reacting to a real `recover()` stream and
+ * the real reducer deciding what to say and when to notify.
+ *
+ * The ONE thing added to the page is a labelled harness strip at the bottom
+ * recording what the app asked the OS to do (notifications, opened URLs, draft
+ * writes) — a browser has no tray, so the effect is shown instead of fired.
+ *
+ * ?case=pending   a previous report GitHub could not be asked about
+ * ?case=hang      the lookup never comes back
+ * ?case=failed    a previous report provably never reached GitHub
+ * ?case=filed     it turns out to have been filed
+ * ?case=recheck   pending first, filed on the second look
+ * ?case=two       two unresolved reports, so [Check again] scope can be seen
+ * &delay=ms       how long each pass takes before it resolves
+ *
+ * Delete after the run.
+ */
+
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from './ui/App.tsx';
+import type { UiServices } from './ui/components/services.ts';
+import type { RecoveryEvent, FilingReceipt } from './core/filing/filing.ts';
+import { DEFAULT_SETTINGS } from './core/types.ts';
+import './ui/styles.css';
+
+const params = new URLSearchParams(location.search);
+const kase = params.get('case') ?? 'pending';
+const delay = Number(params.get('delay') ?? '1200');
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const REPO = 'c3lew/quacket-qa-target';
+
+const receipt = (n: number, id: string, kind: 'new-issue' | 'comment' = 'new-issue'): FilingReceipt => ({
+  url: `https://github.com/${REPO}/issues/${n}`,
+  issueNumber: n,
+  filingId: id,
+  repo: REPO,
+  target: { kind },
+  title: 'Tray icon disappears after unlocking Windows',
+});
+
+// ── The recovery script ─────────────────────────────────────────────────────
+//
+// One entry per report a previous run left behind. `passes[n]` is what the
+// n-th `recover()` for that report says — pass 0 is startup, pass 1 is what
+// [Check again] gets. The last pass repeats if asked again.
+
+interface Plan {
+  id: string;
+  passes: RecoveryEvent[][];
+}
+
+const OFFLINE = 'Could not check GitHub for this report.';
+
+const checking = (id: string): RecoveryEvent => ({ state: 'checking', filingId: id });
+const pending = (id: string): RecoveryEvent => ({ state: 'pending', filingId: id, message: OFFLINE });
+const filed = (id: string, n: number, kind: 'new-issue' | 'comment' = 'new-issue'): RecoveryEvent => ({
+  state: 'filed',
+  filingId: id,
+  receipt: receipt(n, id, kind),
+});
+const failedEv = (id: string): RecoveryEvent => ({
+  state: 'failed',
+  filingId: id,
+  kind: 'upload_failed',
+  message: 'Could not upload an image to this repo.',
+});
+
+const A = 'fil_qa29_a';
+const B = 'fil_qa29_b';
+
+const PLANS: Record<string, Plan[]> = {
+  pending: [{ id: A, passes: [[checking(A), pending(A)]] }],
+  /** The exact message a locally-failed create emits (leg A S4), composed. */
+  contradiction: [
+    {
+      id: A,
+      passes: [
+        [checking(A), { state: 'pending', filingId: A, message: 'Could not file this report.' }],
+      ],
+    },
+  ],
+  hang: [{ id: A, passes: [[checking(A)]] }],
+  failed: [{ id: A, passes: [[checking(A), failedEv(A)]] }],
+  filed: [{ id: A, passes: [[checking(A), filed(A, 57)]] }],
+  comment: [{ id: A, passes: [[checking(A), filed(A, 37, 'comment')]] }],
+  recheck: [{ id: A, passes: [[checking(A), pending(A)], [checking(A), filed(A, 58)]] }],
+  two: [
+    { id: A, passes: [[checking(A), pending(A)], [checking(A), filed(A, 59)]] },
+    { id: B, passes: [[checking(B), pending(B)], [checking(B), filed(B, 60)]] },
+  ],
+};
+
+const plans = PLANS[kase] ?? PLANS.pending;
+const passCount = new Map<string, number>();
+
+// ── Harness recorder ────────────────────────────────────────────────────────
+
+const strip = document.getElementById('harness')!;
+const lines: Array<{ text: string; n: number }> = [];
+/** Consecutive repeats collapse: auto-save fires per keystroke and 40 identical
+ *  rows say nothing 1 row and a count does not. */
+const record = (line: string): void => {
+  const last = lines[lines.length - 1];
+  if (last?.text === line) last.n += 1;
+  else lines.push({ text: line, n: 1 });
+  strip.innerHTML =
+    '<b>HARNESS LOG — what the app asked the OS/disk to do (not app UI)</b><br>' +
+    lines.map((l) => `<div>${l.text}${l.n > 1 ? ` [x${l.n}]` : ''}</div>`).join('');
+};
+
+/**
+ * Mirrors the real `recover()`'s in-flight guard: a Filing a pass is already
+ * working on is skipped, so a second concurrent call can never double-create.
+ * Without it, React StrictMode's dev double-mount would eat two scripted passes
+ * at startup and no [Check again] could ever be observed.
+ */
+const inFlight = new Set<string>();
+
+async function* recover(only?: string): AsyncGenerator<RecoveryEvent> {
+  record(`recover(${only ?? 'all'}) called`);
+  for (const plan of plans) {
+    if (only !== undefined && plan.id !== only) continue;
+    if (inFlight.has(plan.id)) {
+      record(`  ↳ ${plan.id} skipped — a look is already in flight`);
+      continue;
+    }
+    inFlight.add(plan.id);
+    const n = passCount.get(plan.id) ?? 0;
+    passCount.set(plan.id, n + 1);
+    const pass = plan.passes[Math.min(n, plan.passes.length - 1)];
+    for (const [i, event] of pass.entries()) {
+      if (i > 0) await wait(delay);
+      yield event;
+    }
+    // A pass whose script stops at `checking` is a lookup that never answers.
+    if (pass[pass.length - 1]?.state === 'checking') await new Promise<void>(() => {});
+    inFlight.delete(plan.id);
+  }
+}
+
+// ── Services ────────────────────────────────────────────────────────────────
+
+const refined = {
+  type: 'bug' as const,
+  title: 'Tray icon disappears after unlocking Windows',
+  sections: [{ heading: 'Actual', body: 'The icon is gone after unlock.' }],
+  followUps: [],
+  similarIssues: [],
+};
+
+const PNG = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0,
+  0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120, 156, 99, 0, 1, 0, 0, 5, 0, 1, 13, 10, 45,
+  180, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+]);
+
+const services = {
+  detect: async () => ({
+    gh: { installed: true, authenticated: true },
+    providers: [
+      {
+        provider: 'claude' as const,
+        cliVersion: '2.1.210',
+        account: 'eva8isverygood@gmail.com',
+        models: [{ id: 'sonnet', label: 'Sonnet 5', efforts: ['low', 'medium', 'high'] }],
+      },
+    ],
+    settings: { ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' },
+    autostart: false,
+  }),
+  hotkeyConflict: async () => null,
+  listRepos: async () => [{ nameWithOwner: REPO, isPrivate: true }],
+  listIssues: async () => [],
+  refine: async () => ({
+    draft: refined,
+    thread: { provider: 'claude' as const, sessionId: 's1', dir: '/tmp/x' },
+    candidates: [],
+  }),
+  followUp: async () => refined,
+  file: async () => {
+    record('file() called — a NEW report was submitted');
+    return receipt(99, 'fil_qa29_new');
+  },
+  recover,
+  loadDraft: async () => null,
+  saveDraft: async (d: { id: string }) => {
+    record(`saveDraft(${d.id}) — the new draft, stored under its own id`);
+  },
+  attachImage: async () => {
+    record('attachImage() — bytes written under the new draft');
+  },
+  discardDraft: async () => {
+    record('discardDraft() — the new draft was thrown away');
+  },
+  loadSettings: async () => ({ ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' }),
+  saveSettings: async () => {},
+  setAutostart: async () => {},
+  applyHotkey: async () => null,
+  notify: async (message: string) => {
+    record(`<b>OS NOTIFICATION RAISED:</b> "${message}"`);
+  },
+  hide: async () => {
+    record('hide() — the palette went to the tray');
+  },
+  setWidth: async () => {},
+  openUrl: async (url: string) => {
+    record(`openUrl(${url})`);
+  },
+  copy: async () => {},
+  readImages: async () => [],
+  pickImages: async () => [{ bytes: PNG, mediaType: 'image/png' as const }],
+  onSummon: () => () => {},
+  onDropFiles: () => () => {},
+  checkForUpdate: async () => null,
+  installUpdate: async () => {},
+} as unknown as UiServices;
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App services={services} />
+  </StrictMode>,
+);

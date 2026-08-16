@@ -1,0 +1,53 @@
+/** THROWAWAY: does a hidden palette with a draft in progress still notify? */
+import { describe, expect, it } from 'vitest';
+
+import { initialState, reduce, type Action, type UiState } from './core/ui/reducer.ts';
+
+const run = (start: UiState, actions: Action[]): { state: UiState; effects: unknown[] } => {
+  let state = start;
+  const effects: unknown[] = [];
+  for (const action of actions) {
+    const next = reduce(state, action);
+    state = next.state;
+    effects.push(...next.effects);
+  }
+  return { state, effects };
+};
+
+const FILED: Action = {
+  type: 'recovery',
+  event: {
+    state: 'filed',
+    filingId: 'fil_a',
+    receipt: {
+      url: 'https://github.com/o/r/issues/57',
+      issueNumber: 57,
+      filingId: 'fil_a',
+      repo: 'o/r',
+      target: { kind: 'new-issue' },
+      title: 'x',
+    },
+  },
+};
+
+describe('a hidden palette', () => {
+  it('notifies on a recovered success with NO draft in progress', () => {
+    const { state, effects } = run(initialState(), [{ type: 'esc' }, FILED]);
+    console.log('\n[NO DRAFT] hidden:', state.hidden, 'stage:', state.stage);
+    console.log('[NO DRAFT] effects:', JSON.stringify(effects));
+    expect(effects.some((e) => (e as { type: string }).type === 'notify')).toBe(true);
+  });
+
+  it('notifies on a recovered success WITH a draft in progress', () => {
+    const { state, effects } = run(initialState(), [
+      { type: 'edit-raw', raw: 'half a sentence' },
+      { type: 'esc' },
+      FILED,
+    ]);
+    console.log('\n[WITH DRAFT] hidden:', state.hidden, 'stage:', state.stage);
+    console.log('[WITH DRAFT] recovery rows:', state.recovery.length);
+    console.log('[WITH DRAFT] effects:', JSON.stringify(effects));
+    console.log('[WITH DRAFT] raw preserved:', JSON.stringify(state.raw));
+    expect(effects.some((e) => (e as { type: string }).type === 'notify')).toBe(true);
+  });
+});

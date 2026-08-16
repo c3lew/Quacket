@@ -1,0 +1,226 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mD:/Self Project/Quacket[39m
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS1 draft independence[2m > [22m[2mtyping, attaching and discarding a new report leave the old Filing byte-identical
+[22m[39m
+[QA29] S1 the Ambiguous Filing left on disk
+{
+  "acceptedAs": "https://github.com/c3lew/quacket-qa-target/issues/107",
+  "state": "filing",
+  "receipt": null
+}
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS1 draft independence[2m > [22m[2mtyping, attaching and discarding a new report leave the old Filing byte-identical
+[22m[39m
+[QA29] S1 after capturing a new report
+{
+  "filings": [
+    "fil_qa29_s1_1786856866125"
+  ],
+  "drafts": [
+    "draft_2"
+  ]
+}
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS1 draft independence[2m > [22m[2mtyping, attaching and discarding a new report leave the old Filing byte-identical
+[22m[39m
+[QA29] S1 the Ambiguous Filing after all of that
+{
+  "drafts": [],
+  "filings": [
+    "fil_qa29_s1_1786856866125"
+  ],
+  "state": "filing"
+}
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS1 draft independence[2m > [22m[2mtyping, attaching and discarding a new report leave the old Filing byte-identical
+[22m[39m
+[QA29] S1 recovery still resolves it
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa29_s1_1786856866125"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa29_s1_1786856866125",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/107",
+      "issueNumber": 107,
+      "filingId": "fil_qa29_s1_1786856866125",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA29 S1 1786856866125"
+    }
+  }
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS2 check again[2m > [22m[2mstays pending while GitHub is unavailable, then resolves on the next look
+[22m[39m
+[QA29] S2 launch 1 — GitHub unavailable
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa29_s2_1786856866125"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa29_s2_1786856866125",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[QA29] S2 what launch 1 asked gh
+[
+  "api user"
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS2 check again[2m > [22m[2mstays pending while GitHub is unavailable, then resolves on the next look
+[22m[39m
+[QA29] S2 [Check again] once GitHub answers
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa29_s2_1786856866125"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa29_s2_1786856866125",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/108",
+      "issueNumber": 108,
+      "filingId": "fil_qa29_s2_1786856866125",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA29 S2 1786856866125"
+    }
+  }
+]
+
+[QA29] S2 what it asked gh
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS2 check again[2m > [22m[2mstays pending while GitHub is unavailable, then resolves on the next look
+[22m[39m
+[QA29] S2 issues carrying this identity
+[
+  "https://github.com/c3lew/quacket-qa-target/issues/108"
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS3 check again is scoped[2m > [22m[2mreconciles only the report the button sits on and never touches the other
+[22m[39m
+[QA29] S3 two unresolved reports on disk
+[
+  "fil_qa29_s3_1786856866125",
+  "fil_qa29_s3_1786856866125_b"
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS3 check again is scoped[2m > [22m[2mreconciles only the report the button sits on and never touches the other
+[22m[39m
+[QA29] S3 recover(a) events
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa29_s3_1786856866125"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa29_s3_1786856866125",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/109",
+      "issueNumber": 109,
+      "filingId": "fil_qa29_s3_1786856866125",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA29 S3 0 1786856866125"
+    }
+  }
+]
+
+[QA29] S3 every gh call it made
+[
+  "api user",
+  "api repos/c3lew/quacket-qa-target/issues?state=all&creator=c3lew&per_page=100&page=1"
+]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS4 the words a disk failure produces[2m > [22m[2mreports a local failure without leaking a path or an internal term
+[22m[39m
+[QA29] S4 disk after the failed create
+{
+  "version": 1,
+  "id": "fil_qa29_s4_1786856866125",
+  "state": "failed",
+  "repo": "c3lew/quacket-qa-target",
+  "isPrivate": true,
+  "target": {
+    "kind": "new-issue"
+  },
+  "createdAt": "2026-08-16T05:08:39.247Z",
+  "updatedAt": "2026-08-16T05:08:42.155Z",
+  "cleanup": "pending",
+  "assets": [
+    {
+      "repo": "c3lew/quacket-qa-target",
+      "mediaType": "image/png",
+      "fingerprint": "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6",
+      "url": "https://github.com/c3lew/quacket-qa-target/blob/6f8059b102cf7e26d6f5d90ce9255aa3ee3d4e50/.quacket/assets/2026-08-16T05-08-39-946Z-img_1.png"
+    }
+  ],
+  "attemptedAt": "2026-08-16T05:08:41.328Z",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue."
+  }
+}
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mS4 the words a disk failure produces[2m > [22m[2mreports a local failure without leaking a path or an internal term
+[22m[39m
+[QA29] S4 what recovery emitted
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa29_s4_1786856866125"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa29_s4_1786856866125",
+    "message": "Could not file this report."
+  }
+]
+
+[QA29] S4 the sentence the palette will render
+Could not file this report.
+
+[QA29] S4 internal terms that reached the user
+[]
+
+[90mstdout[2m | src/qa-29.test.ts[2m > [22m[2mthe QA repo[2m > [22m[2mlists what this run created, so it can be cleaned up
+[22m[39m
+[QA29] issues this run filed
+[
+  107,
+  108,
+  109,
+  110
+]
+
+ [32m✓[39m src/qa-29.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 72705[2mms[22m[39m
+   [33m[2m✓[22m[39m S1 draft independence[2m > [22mtyping, attaching and discarding a new report leave the old Filing byte-identical [33m 17648[2mms[22m[39m
+   [33m[2m✓[22m[39m S2 check again[2m > [22mstays pending while GitHub is unavailable, then resolves on the next look [33m 17816[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 check again is scoped[2m > [22mreconciles only the report the button sits on and never touches the other [33m 17650[2mms[22m[39m
+   [33m[2m✓[22m[39m S4 the words a disk failure produces[2m > [22mreports a local failure without leaking a path or an internal term [33m 19589[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 13:07:45
+[2m   Duration [22m 73.26s[2m (transform 65ms, setup 0ms, collect 90ms, tests 72.70s, environment 0ms, prepare 68ms)[22m
+

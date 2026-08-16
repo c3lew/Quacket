@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quacket QA #29</title>
+    <style>
+      #harness {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: 30vh;
+        overflow: auto;
+        pointer-events: none;
+        background: #101014;
+        color: #9fe6a0;
+        font: 12px/1.5 ui-monospace, monospace;
+        padding: 8px 12px;
+        border-top: 2px dashed #444;
+        z-index: 99999;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="harness"></div>
+    <script type="module" src="/src/qa-harness.tsx"></script>
+  </body>
+</html>

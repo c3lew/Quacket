@@ -1,0 +1,419 @@
+/**
+ * THROWAWAY QA harness for issue #29 — a previous report as a status, not a wall.
+ *
+ * Not a regression test: vitest is only the runner. Everything below drives the
+ * production `createFiling` against REAL `gh`, a REAL private repo
+ * (c3lew/quacket-qa-target) and a REAL disk. Faults are injected at exactly two
+ * seams — one `gh` call, or one FileStore method — so every other step is the
+ * shipped path.
+ *
+ * Leg B (the palette in a browser) covers what the user READS. This leg covers
+ * what the user cannot see: what is on disk, and what `gh` is actually asked.
+ *
+ * Delete after the run.
+ */
+
+import { spawn } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+import { DraftStore } from './core/drafts/store.ts';
+import { joinPath, type FileStore } from './core/files.ts';
+import { nodeFiles } from './core/testing/node-files.ts';
+import type { ProcessRunner, ProcResult, ProcSpec } from './core/runner.ts';
+import type { Draft, ImageAttachment, Repo } from './core/types.ts';
+import { createFiling, filingMarker, type Filing, type RecoveryEvent } from './core/filing/filing.ts';
+
+const GH = 'C:\\Program Files\\GitHub CLI\\gh.exe';
+const REPO: Repo = { nameWithOwner: 'c3lew/quacket-qa-target', isPrivate: true };
+const RUN = Date.now();
+
+// ── The real process seam ───────────────────────────────────────────────────
+
+const realRunner: ProcessRunner = {
+  run: (spec: ProcSpec) =>
+    new Promise<ProcResult>((resolve) => {
+      const child = spawn(spec.cmd === 'gh' ? GH : spec.cmd, spec.args, { shell: false });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (d) => (stdout += String(d)));
+      child.stderr.on('data', (d) => (stderr += String(d)));
+      child.stdin.end(spec.stdin ?? '');
+      child.on('close', (code) => resolve({ exitCode: code, stdout, stderr, timedOut: false }));
+      child.on('error', (e) =>
+        resolve({ exitCode: 127, stdout: '', stderr: String(e), timedOut: false }),
+      );
+    }),
+  session: () => {
+    throw new Error('not used by filing');
+  },
+};
+
+interface Fault {
+  when: (args: string[]) => boolean;
+  result?: ProcResult;
+  hang?: boolean;
+}
+
+const fail = (stderr: string): ProcResult => ({ exitCode: 1, stdout: '', stderr, timedOut: false });
+
+const ghJson = async <T>(path: string): Promise<T> => {
+  const r = await realRunner.run({ cmd: 'gh', args: ['api', path] });
+  if (r.exitCode !== 0) throw new Error(`gh api ${path} failed: ${r.stderr}`);
+  return JSON.parse(r.stdout) as T;
+};
+
+interface RemoteRow {
+  number?: number;
+  html_url?: string;
+  body?: string | null;
+}
+
+/** Every issue in the QA repo whose body carries this Filing's hidden identity. */
+const remoteIssues = async (id: string, expect = 0): Promise<RemoteRow[]> => {
+  const read = async (): Promise<RemoteRow[]> => {
+    const rows = await ghJson<RemoteRow[]>(
+      `repos/${REPO.nameWithOwner}/issues?state=all&per_page=100`,
+    );
+    return rows.filter((r) => (r.body ?? '').includes(filingMarker(id)));
+  };
+  let rows = await read();
+  for (let i = 0; i < 10 && rows.length < expect; i += 1) {
+    await new Promise((r) => setTimeout(r, 1500));
+    rows = await read();
+  }
+  return rows;
+};
+
+const filed: number[] = [];
+
+// ── Harness ─────────────────────────────────────────────────────────────────
+
+const image = (): ImageAttachment => ({
+  id: 'img_1',
+  bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+  mediaType: 'image/png',
+  annotated: false,
+});
+
+const draftFor = (title: string, over: Partial<Draft> = {}): Draft => ({
+  id: 'draft_1',
+  repo: REPO.nameWithOwner,
+  raw: 'qa 29',
+  images: [],
+  refined: {
+    type: 'bug',
+    title,
+    sections: [{ heading: 'Actual', body: 'Filed by the #29 QA harness.' }],
+    followUps: [],
+    similarIssues: [],
+  },
+  target: { kind: 'new-issue' },
+  ...over,
+});
+
+interface Ctx {
+  dir: string;
+  calls: string[][];
+  faults: Fault[];
+  launch: (files?: FileStore) => Filing;
+  snapshot: (id: string) => Promise<Record<string, unknown> | null>;
+  filings: () => Promise<string[]>;
+  drafts: () => Promise<string[]>;
+  save: (draft: Draft, files?: FileStore) => Promise<void>;
+  store: (files?: FileStore) => DraftStore;
+}
+
+const withCtx = async (id: string, run: (c: Ctx) => Promise<void>): Promise<void> => {
+  const dir = await mkdtemp(join(tmpdir(), 'quacket-qa29-'));
+  const calls: string[][] = [];
+  const faults: Fault[] = [];
+  const ids = [id, `${id}_b`, `${id}_c`];
+  const runner: ProcessRunner = {
+    run: async (spec) => {
+      calls.push(spec.args);
+      const fault = faults.find((f) => f.when(spec.args));
+      if (fault?.hang === true) return new Promise<ProcResult>(() => {});
+      if (fault?.result !== undefined) return fault.result;
+      return realRunner.run(spec);
+    },
+    session: realRunner.session,
+  };
+  try {
+    await run({
+      dir,
+      calls,
+      faults,
+      launch: (files = nodeFiles) =>
+        createFiling({
+          runner,
+          files,
+          drafts: new DraftStore(dir, files),
+          baseDir: dir,
+          newId: () => ids.shift() ?? `${id}_overflow`,
+        }),
+      snapshot: async (fid) => {
+        const text = await nodeFiles.readText(joinPath(dir, 'filings', fid, 'filing.json'));
+        return text === null ? null : (JSON.parse(text) as Record<string, unknown>);
+      },
+      filings: async () => (await nodeFiles.list(joinPath(dir, 'filings'))) ?? [],
+      drafts: async () => (await nodeFiles.list(joinPath(dir, 'drafts'))) ?? [],
+      store: (files = nodeFiles) => new DraftStore(dir, files),
+      save: async (draft, files = nodeFiles) => {
+        const store = new DraftStore(dir, files);
+        await store.save(draft);
+        for (const img of draft.images) await store.attachImage(draft, img);
+      },
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+/**
+ * The crash this slice inherits: GitHub has accepted the report and NOTHING
+ * durable happens afterwards. What is left on disk is an Ambiguous Filing.
+ */
+const crashAfterAccept: FileStore = {
+  ...nodeFiles,
+  writeText: async (path, text) => {
+    if (text.includes('"receipt"')) throw new Error('injected crash: receipt write lost');
+    return nodeFiles.writeText(path, text);
+  },
+  remove: async (path) => {
+    if (path.includes('filings')) throw new Error('injected crash: process is gone');
+    return nodeFiles.remove(path);
+  },
+};
+
+const drain = async (filing: Filing, only?: string): Promise<RecoveryEvent[]> => {
+  const events: RecoveryEvent[] = [];
+  for await (const event of filing.recover(only)) events.push(event);
+  return events;
+};
+
+const creates = (calls: string[][]): string[][] =>
+  calls.filter((a) => a.includes('create') || a.includes('comment') || a.includes('--method'));
+
+const log = (label: string, value: unknown): void => {
+  console.log(
+    `\n[QA29] ${label}\n${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}`,
+  );
+};
+
+const TIMEOUT = 240_000;
+
+// ── S1 — a new Draft cannot touch the Ambiguous Filing (story 15) ────────────
+
+describe('S1 draft independence', () => {
+  it(
+    'typing, attaching and discarding a new report leave the old Filing byte-identical',
+    async () => {
+      const id = `fil_qa29_s1_${RUN}`;
+      await withCtx(id, async (c) => {
+        const title = `QA29 S1 ${RUN}`;
+        await c.save(draftFor(title), crashAfterAccept);
+        const live = await c.launch(crashAfterAccept).file({
+          kind: 'new',
+          draft: draftFor(title),
+          repo: REPO,
+          decision: 'as-captured',
+        });
+        filed.push(live.issueNumber);
+
+        const before = await c.snapshot(id);
+        expect(before?.state).toBe('filing');
+        log('S1 the Ambiguous Filing left on disk', {
+          acceptedAs: live.url,
+          state: before?.state,
+          receipt: before?.receipt ?? null,
+        });
+
+        // The user comes back and captures a WHOLE new report beside it.
+        const store = c.store();
+        const next = draftFor('QA29 S1 a completely different report');
+        await store.save({ ...next, id: 'draft_2' });
+        await store.attachImage({ ...next, id: 'draft_2' }, image());
+        await store.save({ ...next, id: 'draft_2', raw: 'more typing, more autosaves' });
+        log('S1 after capturing a new report', {
+          filings: await c.filings(),
+          drafts: await c.drafts(),
+        });
+
+        // …and then throws it away, the most destructive thing a draft can do.
+        await store.discard();
+
+        const after = await c.snapshot(id);
+        log('S1 the Ambiguous Filing after all of that', {
+          drafts: await c.drafts(),
+          filings: await c.filings(),
+          state: after?.state,
+        });
+
+        expect(after).toEqual(before);
+        expect(await c.filings()).toEqual([id]);
+
+        // And it is still recoverable — the discard did not orphan it.
+        const events = await drain(c.launch());
+        log('S1 recovery still resolves it', events);
+        expect(events.map((e) => e.state)).toContain('filed');
+
+        const remote = await remoteIssues(id, 1);
+        expect(remote).toHaveLength(1);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S2 — Check again re-runs reconciliation when GitHub comes back (story 13) ─
+
+describe('S2 check again', () => {
+  it(
+    'stays pending while GitHub is unavailable, then resolves on the next look',
+    async () => {
+      const id = `fil_qa29_s2_${RUN}`;
+      await withCtx(id, async (c) => {
+        const title = `QA29 S2 ${RUN}`;
+        await c.save(draftFor(title), crashAfterAccept);
+        const live = await c.launch(crashAfterAccept).file({
+          kind: 'new',
+          draft: draftFor(title),
+          repo: REPO,
+          decision: 'as-captured',
+        });
+        filed.push(live.issueNumber);
+
+        // Launch 1: GitHub is not answering. It must stay pending, and must NOT
+        // create anything on a guess.
+        const afterCrash = c.calls.length;
+        c.faults.push({ when: (a) => a.includes('api'), result: fail('gh: not logged in') });
+        const offline = await drain(c.launch());
+        log('S2 launch 1 — GitHub unavailable', offline);
+        log('S2 what launch 1 asked gh', c.calls.slice(afterCrash).map((a) => a.join(' ')));
+        expect(offline[offline.length - 1]?.state).toBe('pending');
+        expect(creates(c.calls.slice(afterCrash))).toEqual([]);
+
+        // The user clicks [Check again] after signing back in.
+        c.faults.length = 0;
+        const before = c.calls.length;
+        const recheck = await drain(c.launch(), id);
+        log('S2 [Check again] once GitHub answers', recheck);
+        log('S2 what it asked gh', c.calls.slice(before).map((a) => a.join(' ')));
+        expect(recheck[recheck.length - 1]?.state).toBe('filed');
+
+        const remote = await remoteIssues(id, 1);
+        log('S2 issues carrying this identity', remote.map((r) => r.html_url));
+        expect(remote).toHaveLength(1);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S3 — [Check again] asks about ONE report (story 13/14, the #37 class) ─────
+
+describe('S3 check again is scoped', () => {
+  it(
+    'reconciles only the report the button sits on and never touches the other',
+    async () => {
+      const id = `fil_qa29_s3_${RUN}`;
+      await withCtx(id, async (c) => {
+        // Two Ambiguous Filings, from two separate crashes.
+        const a = `${id}`;
+        const b = `${id}_b`;
+        for (const [n, fid] of [a, b].entries()) {
+          const title = `QA29 S3 ${n} ${RUN}`;
+          await c.save(draftFor(title), crashAfterAccept);
+          const live = await c.launch(crashAfterAccept).file({
+            kind: 'new',
+            draft: draftFor(title),
+            repo: REPO,
+            decision: 'as-captured',
+          });
+          filed.push(live.issueNumber);
+          expect((await c.snapshot(fid))?.state).toBe('filing');
+        }
+        log('S3 two unresolved reports on disk', await c.filings());
+
+        const before = c.calls.length;
+        const events = await drain(c.launch(), a);
+        const asked = c.calls.slice(before);
+        log('S3 recover(a) events', events);
+        log('S3 every gh call it made', asked.map((x) => x.join(' ')));
+
+        // Every event is about `a`. `b` was not asked about, and not advanced.
+        expect([...new Set(events.map((e) => e.filingId))]).toEqual([a]);
+        expect((await c.snapshot(b))?.state).toBe('filing');
+        expect(await remoteIssues(b)).toHaveLength(1); // the one the crash left, no more
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+// ── S4 — what a disk failure during a resume SAYS to the user (stories 18, 38) ─
+
+describe('S4 the words a disk failure produces', () => {
+  it(
+    'reports a local failure without leaking a path or an internal term',
+    async () => {
+      const id = `fil_qa29_s4_${RUN}`;
+      await withCtx(id, async (c) => {
+        const title = `QA29 S4 ${RUN}`;
+        const withImage = draftFor(title, { images: [image()] });
+        await c.save(withImage, crashAfterAccept);
+
+        // A Filing that GitHub never saw: the create itself failed.
+        c.faults.push({ when: (a) => a.includes('create'), result: fail('gh: create exploded') });
+        await c
+          .launch()
+          .file({ kind: 'new', draft: withImage, repo: REPO, decision: 'as-captured' })
+          .catch(() => undefined);
+        c.faults.length = 0;
+        log('S4 disk after the failed create', await c.snapshot(id));
+
+        // Now the next launch reconciles, finds no match, and resumes — but the
+        // DISK gives out while it re-reads the screenshot it owns. A snapshot
+        // WRITE is deliberately swallowed (it cannot change an outcome); a READ
+        // is not, so this is the live route from a raw OS error to the palette,
+        // which renders `message` verbatim.
+        const brokenDisk: FileStore = {
+          ...nodeFiles,
+          readBytes: async (path) => {
+            if (path.includes('filings')) {
+              throw new Error(`EPERM: operation not permitted, open '${path}'`);
+            }
+            return nodeFiles.readBytes(path);
+          },
+        };
+        const events = await drain(c.launch(brokenDisk));
+        log('S4 what recovery emitted', events);
+
+        const shown = events
+          .map((e) => ('message' in e ? e.message : ''))
+          .filter((m) => m !== '')
+          .join(' | ');
+        log('S4 the sentence the palette will render', shown);
+
+        const INTERNAL = [
+          'marker', 'journal', 'receipt', 'atomic', 'handoff', 'snapshot', 'workspace',
+          'filing', 'reconcil', 'pagination', 'upload', 'appdata', 'eperm', 'enoent',
+          '\\', '/filings/', '.json',
+        ];
+        const leaked = INTERNAL.filter((t) => shown.toLowerCase().includes(t));
+        log('S4 internal terms that reached the user', leaked);
+        expect(leaked).toEqual([]);
+      });
+    },
+    TIMEOUT,
+  );
+});
+
+describe('the QA repo', () => {
+  it('lists what this run created, so it can be cleaned up', () => {
+    log('issues this run filed', filed);
+  });
+});
