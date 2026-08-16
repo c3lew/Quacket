@@ -1,0 +1,217 @@
+/**
+ * THROWAWAY QA harness for #40, leg B: the real palette in a real browser.
+ *
+ * Inherits #29's leg-B rig, with ONE change: the recovery script is no longer
+ * written here. It is loaded from the JSON leg A captured off the shipped
+ * producer (docs/qa/40/s*-events.json), so a sentence cannot be right on screen
+ * because QA retyped it. The one exception is `?case=before`, which replays the
+ * event #29 recorded BEFORE the fix, so the two rows can be read side by side.
+ *
+ * Mounts the shipped <App> with a hand-written UiServices. Nothing about the
+ * Tauri shell is involved — App imports nothing host-specific — so what is on
+ * screen is the real component tree reacting to a real `recover()` stream and
+ * the real reducer deciding what to say and when to notify.
+ *
+ * The ONE thing added to the page is a labelled harness strip at the bottom
+ * recording what the app asked the OS to do (notifications, opened URLs, draft
+ * writes) — a browser has no tray, so the effect is shown instead of fired.
+ *
+ * ?case=s1       the #40 repro: a resume the disk killed        (leg A capture)
+ * ?case=s2       a resume GitHub refused the create for         (leg A capture)
+ * ?case=s3       a lookup that could not answer at all          (leg A capture)
+ * ?case=s4       pending, then [Check again] resolves it        (leg A capture)
+ * ?case=before   the row #29 shipped, for comparison            (#29's log)
+ * &delay=ms      how long the pass takes before it resolves
+ *
+ * Delete after the run.
+ */
+
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+
+import { App } from './ui/App.tsx';
+import type { UiServices } from './ui/components/services.ts';
+import type { RecoveryEvent, FilingReceipt } from './core/filing/filing.ts';
+import { DEFAULT_SETTINGS } from './core/types.ts';
+import './ui/styles.css';
+
+const params = new URLSearchParams(location.search);
+const kase = params.get('case') ?? 's1';
+const delay = Number(params.get('delay') ?? '1200');
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const REPO = 'c3lew/quacket-qa-target';
+
+const receipt = (n: number, id: string, kind: 'new-issue' | 'comment' = 'new-issue'): FilingReceipt => ({
+  url: `https://github.com/${REPO}/issues/${n}`,
+  issueNumber: n,
+  filingId: id,
+  repo: REPO,
+  target: { kind },
+  title: 'Tray icon disappears after unlocking Windows',
+});
+
+// ── The recovery script ─────────────────────────────────────────────────────
+//
+// One entry per report a previous run left behind. `passes[n]` is what the
+// n-th `recover()` for that report says — pass 0 is startup, pass 1 is what
+// [Check again] gets. The last pass repeats if asked again.
+//
+// For #40 every pass is READ OFF DISK: it is exactly what leg A watched the
+// shipped `createFiling().recover()` emit against real `gh` and a real disk.
+
+interface Plan {
+  id: string;
+  passes: RecoveryEvent[][];
+}
+
+/** The row #29 shipped, transcribed from docs/qa/29/leg-a-real-gh.log (S4). */
+const BEFORE: RecoveryEvent[] = [
+  { state: 'checking', filingId: 'fil_qa29_s4_before' },
+  { state: 'pending', filingId: 'fil_qa29_s4_before', message: 'Could not file this report.' },
+];
+
+/**
+ * A capture is either one pass or a pass per look. `s4-events.json` is the
+ * second shape: what startup said, then what [Check again] got.
+ */
+const loadPasses = async (): Promise<RecoveryEvent[][]> => {
+  if (kase === 'before') return [BEFORE];
+  const res = await fetch(`/docs/qa/40/${kase}-events.json`);
+  if (!res.ok) throw new Error(`no capture for ?case=${kase} (${res.status})`);
+  const body = (await res.json()) as RecoveryEvent[] | RecoveryEvent[][];
+  return Array.isArray(body[0]) ? (body as RecoveryEvent[][]) : [body as RecoveryEvent[]];
+};
+
+const captured = await loadPasses();
+const plans: Plan[] = [{ id: captured[0][0]?.filingId ?? 'fil_unknown', passes: captured }];
+const passCount = new Map<string, number>();
+
+// ── Harness recorder ────────────────────────────────────────────────────────
+
+const strip = document.getElementById('harness')!;
+const lines: Array<{ text: string; n: number }> = [];
+/** Consecutive repeats collapse: auto-save fires per keystroke and 40 identical
+ *  rows say nothing 1 row and a count does not. */
+const record = (line: string): void => {
+  const last = lines[lines.length - 1];
+  if (last?.text === line) last.n += 1;
+  else lines.push({ text: line, n: 1 });
+  strip.innerHTML =
+    '<b>HARNESS LOG — what the app asked the OS/disk to do (not app UI)</b><br>' +
+    lines.map((l) => `<div>${l.text}${l.n > 1 ? ` [x${l.n}]` : ''}</div>`).join('');
+};
+
+/**
+ * Mirrors the real `recover()`'s in-flight guard: a Filing a pass is already
+ * working on is skipped, so a second concurrent call can never double-create.
+ * Without it, React StrictMode's dev double-mount would eat two scripted passes
+ * at startup and no [Check again] could ever be observed.
+ */
+const inFlight = new Set<string>();
+
+async function* recover(only?: string): AsyncGenerator<RecoveryEvent> {
+  record(`recover(${only ?? 'all'}) called`);
+  for (const plan of plans) {
+    if (only !== undefined && plan.id !== only) continue;
+    if (inFlight.has(plan.id)) {
+      record(`  ↳ ${plan.id} skipped — a look is already in flight`);
+      continue;
+    }
+    inFlight.add(plan.id);
+    const n = passCount.get(plan.id) ?? 0;
+    passCount.set(plan.id, n + 1);
+    const pass = plan.passes[Math.min(n, plan.passes.length - 1)];
+    for (const [i, event] of pass.entries()) {
+      if (i > 0) await wait(delay);
+      yield event;
+    }
+    // A pass whose script stops at `checking` is a lookup that never answers.
+    if (pass[pass.length - 1]?.state === 'checking') await new Promise<void>(() => {});
+    inFlight.delete(plan.id);
+  }
+}
+
+// ── Services ────────────────────────────────────────────────────────────────
+
+const refined = {
+  type: 'bug' as const,
+  title: 'Tray icon disappears after unlocking Windows',
+  sections: [{ heading: 'Actual', body: 'The icon is gone after unlock.' }],
+  followUps: [],
+  similarIssues: [],
+};
+
+const PNG = new Uint8Array([
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0,
+  0, 31, 21, 196, 137, 0, 0, 0, 10, 73, 68, 65, 84, 120, 156, 99, 0, 1, 0, 0, 5, 0, 1, 13, 10, 45,
+  180, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+]);
+
+const services = {
+  detect: async () => ({
+    gh: { installed: true, authenticated: true },
+    providers: [
+      {
+        provider: 'claude' as const,
+        cliVersion: '2.1.210',
+        account: 'eva8isverygood@gmail.com',
+        models: [{ id: 'sonnet', label: 'Sonnet 5', efforts: ['low', 'medium', 'high'] }],
+      },
+    ],
+    settings: { ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' },
+    autostart: false,
+  }),
+  hotkeyConflict: async () => null,
+  listRepos: async () => [{ nameWithOwner: REPO, isPrivate: true }],
+  listIssues: async () => [],
+  refine: async () => ({
+    draft: refined,
+    thread: { provider: 'claude' as const, sessionId: 's1', dir: '/tmp/x' },
+    candidates: [],
+  }),
+  followUp: async () => refined,
+  file: async () => {
+    record('file() called — a NEW report was submitted');
+    return receipt(99, 'fil_qa29_new');
+  },
+  recover,
+  loadDraft: async () => null,
+  saveDraft: async (d: { id: string }) => {
+    record(`saveDraft(${d.id}) — the new draft, stored under its own id`);
+  },
+  attachImage: async () => {
+    record('attachImage() — bytes written under the new draft');
+  },
+  discardDraft: async () => {
+    record('discardDraft() — the new draft was thrown away');
+  },
+  loadSettings: async () => ({ ...DEFAULT_SETTINGS, model: 'sonnet', effort: 'medium' }),
+  saveSettings: async () => {},
+  setAutostart: async () => {},
+  applyHotkey: async () => null,
+  notify: async (message: string) => {
+    record(`<b>OS NOTIFICATION RAISED:</b> "${message}"`);
+  },
+  hide: async () => {
+    record('hide() — the palette went to the tray');
+  },
+  setWidth: async () => {},
+  openUrl: async (url: string) => {
+    record(`openUrl(${url})`);
+  },
+  copy: async () => {},
+  readImages: async () => [],
+  pickImages: async () => [{ bytes: PNG, mediaType: 'image/png' as const }],
+  onSummon: () => () => {},
+  onDropFiles: () => () => {},
+  checkForUpdate: async () => null,
+  installUpdate: async () => {},
+} as unknown as UiServices;
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App services={services} />
+  </StrictMode>,
+);

@@ -1,0 +1,11 @@
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s1_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s1_1786860742234",
+    "message": "Could not confirm whether this report was sent."
+  }
+]

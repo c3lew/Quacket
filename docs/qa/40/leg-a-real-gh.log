@@ -1,0 +1,287 @@
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mD:/Self Project/Quacket[39m
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS1 the words a disk failure during a resume produces[2m > [22m[2msays it cannot confirm, not that it could not file
+[22m[39m
+[QA40] S1 disk after the failed create
+{
+  "version": 1,
+  "id": "fil_qa40_s1_1786860742234",
+  "state": "failed",
+  "repo": "c3lew/quacket-qa-target",
+  "isPrivate": true,
+  "target": {
+    "kind": "new-issue"
+  },
+  "createdAt": "2026-08-16T06:12:22.243Z",
+  "updatedAt": "2026-08-16T06:12:24.926Z",
+  "cleanup": "pending",
+  "assets": [
+    {
+      "repo": "c3lew/quacket-qa-target",
+      "mediaType": "image/png",
+      "fingerprint": "4c4b6a3be1314ab86138bef4314dde022e600960d8689a2c8f8631802d20dab6",
+      "url": "https://github.com/c3lew/quacket-qa-target/blob/67173ae85269baefbc8bcb454f6fa1d720fdd40d/.quacket/assets/2026-08-16T06-12-22-994Z-img_1.png"
+    }
+  ],
+  "attemptedAt": "2026-08-16T06:12:24.158Z",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue."
+  }
+}
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS1 the words a disk failure during a resume produces[2m > [22m[2msays it cannot confirm, not that it could not file
+[22m[39m
+[QA40] S1 what recovery emitted
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s1_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s1_1786860742234",
+    "message": "Could not confirm whether this report was sent."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS1 the words a disk failure during a resume produces[2m > [22m[2msays it cannot confirm, not that it could not file
+[22m[39m
+[QA40] wrote docs/qa/40/s1-events.json for leg B
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s1_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s1_1786860742234",
+    "message": "Could not confirm whether this report was sent."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS1 the words a disk failure during a resume produces[2m > [22m[2msays it cannot confirm, not that it could not file
+[22m[39m
+[QA40] S1 the sentences a pending row will render
+[
+  "Could not confirm whether this report was sent."
+]
+
+[QA40] S1 the row a user reads
+Your report from last time is still pending. Could not confirm whether this report was sent.
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS1 the words a disk failure during a resume produces[2m > [22m[2msays it cannot confirm, not that it could not file
+[22m[39m
+[QA40] S1 what the disk still records about the failure
+{
+  "state": "failed",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue."
+  },
+  "lastCheck": null
+}
+
+[QA40] S1 internal terms that reached the user
+[]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS2 the words a rejected create during a resume produces[2m > [22m[2malso lands as uncertainty, not as a verdict
+[22m[39m
+[QA40] S2 disk after the failed create
+{
+  "version": 1,
+  "id": "fil_qa40_s2_1786860742234",
+  "state": "failed",
+  "repo": "c3lew/quacket-qa-target",
+  "isPrivate": true,
+  "target": {
+    "kind": "new-issue"
+  },
+  "createdAt": "2026-08-16T06:12:41.653Z",
+  "updatedAt": "2026-08-16T06:12:42.328Z",
+  "cleanup": "pending",
+  "assets": [],
+  "attemptedAt": "2026-08-16T06:12:41.657Z",
+  "lastFailure": {
+    "kind": "create_failed",
+    "message": "Could not create the issue."
+  }
+}
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS2 the words a rejected create during a resume produces[2m > [22m[2malso lands as uncertainty, not as a verdict
+[22m[39m
+[QA40] S2 what recovery emitted
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s2_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s2_1786860742234",
+    "message": "Could not confirm whether this report was sent."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS2 the words a rejected create during a resume produces[2m > [22m[2malso lands as uncertainty, not as a verdict
+[22m[39m
+[QA40] wrote docs/qa/40/s2-events.json for leg B
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s2_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s2_1786860742234",
+    "message": "Could not confirm whether this report was sent."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS2 the words a rejected create during a resume produces[2m > [22m[2malso lands as uncertainty, not as a verdict
+[22m[39m
+[QA40] S2 the row a user reads
+Your report from last time is still pending. Could not confirm whether this report was sent.
+
+[QA40] S2 internal terms that reached the user
+[]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS3 a lookup that cannot answer still says WHY[2m > [22m[2mkeeps the lookup its own uncertainty sentence rather than a generic one
+[22m[39m
+[QA40] S3 what recovery emitted
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s3_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s3_1786860742234",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS3 a lookup that cannot answer still says WHY[2m > [22m[2mkeeps the lookup its own uncertainty sentence rather than a generic one
+[22m[39m
+[QA40] wrote docs/qa/40/s3-events.json for leg B
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s3_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s3_1786860742234",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS3 a lookup that cannot answer still says WHY[2m > [22m[2mkeeps the lookup its own uncertainty sentence rather than a generic one
+[22m[39m
+[QA40] S3 the row a user reads
+Your report from last time is still pending. Could not confirm which GitHub account is signed in.
+
+[QA40] S3 internal terms that reached the user
+[]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS4 what [Check again] gets on the second look[2m > [22m[2mleaves the uncertainty behind and names the issue it was filed as
+[22m[39m
+[QA40] S4 look 1, GitHub unreachable
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s4_1786860742234"
+  },
+  {
+    "state": "pending",
+    "filingId": "fil_qa40_s4_1786860742234",
+    "message": "Could not confirm which GitHub account is signed in."
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS4 what [Check again] gets on the second look[2m > [22m[2mleaves the uncertainty behind and names the issue it was filed as
+[22m[39m
+[QA40] S4 look 2, what [Check again] got
+[
+  {
+    "state": "checking",
+    "filingId": "fil_qa40_s4_1786860742234"
+  },
+  {
+    "state": "filed",
+    "filingId": "fil_qa40_s4_1786860742234",
+    "receipt": {
+      "url": "https://github.com/c3lew/quacket-qa-target/issues/115",
+      "issueNumber": 115,
+      "filingId": "fil_qa40_s4_1786860742234",
+      "repo": "c3lew/quacket-qa-target",
+      "target": {
+        "kind": "new-issue"
+      },
+      "title": "QA40 S4 1786860742234"
+    }
+  }
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS4 what [Check again] gets on the second look[2m > [22m[2mleaves the uncertainty behind and names the issue it was filed as
+[22m[39m
+[QA40] wrote docs/qa/40/s4-events.json for leg B
+[
+  [
+    {
+      "state": "checking",
+      "filingId": "fil_qa40_s4_1786860742234"
+    },
+    {
+      "state": "pending",
+      "filingId": "fil_qa40_s4_1786860742234",
+      "message": "Could not confirm which GitHub account is signed in."
+    }
+  ],
+  [
+    {
+      "state": "checking",
+      "filingId": "fil_qa40_s4_1786860742234"
+    },
+    {
+      "state": "filed",
+      "filingId": "fil_qa40_s4_1786860742234",
+      "receipt": {
+        "url": "https://github.com/c3lew/quacket-qa-target/issues/115",
+        "issueNumber": 115,
+        "filingId": "fil_qa40_s4_1786860742234",
+        "repo": "c3lew/quacket-qa-target",
+        "target": {
+          "kind": "new-issue"
+        },
+        "title": "QA40 S4 1786860742234"
+      }
+    }
+  ]
+]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mS4 what [Check again] gets on the second look[2m > [22m[2mleaves the uncertainty behind and names the issue it was filed as
+[22m[39m
+[QA40] S4 internal terms that reached the user
+[]
+
+[90mstdout[2m | src/qa-40.test.ts[2m > [22m[2mthe QA repo[2m > [22m[2mlists what this run created, so it can be cleaned up
+[22m[39m
+[QA40] issues this run filed
+[
+  114,
+  115
+]
+
+ [32m✓[39m src/qa-40.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 71778[2mms[22m[39m
+   [33m[2m✓[22m[39m S1 the words a disk failure during a resume produces[2m > [22msays it cannot confirm, not that it could not file [33m 19414[2mms[22m[39m
+   [33m[2m✓[22m[39m S2 the words a rejected create during a resume produces[2m > [22malso lands as uncertainty, not as a verdict [33m 19512[2mms[22m[39m
+   [33m[2m✓[22m[39m S3 a lookup that cannot answer still says WHY[2m > [22mkeeps the lookup its own uncertainty sentence rather than a generic one [33m 15021[2mms[22m[39m
+   [33m[2m✓[22m[39m S4 what [Check again] gets on the second look[2m > [22mleaves the uncertainty behind and names the issue it was filed as [33m 17830[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m5 passed[39m[22m[90m (5)[39m
+[2m   Start at [22m 14:12:21
+[2m   Duration [22m 72.47s[2m (transform 64ms, setup 0ms, collect 82ms, tests 71.78s, environment 0ms, prepare 79ms)[22m
+
