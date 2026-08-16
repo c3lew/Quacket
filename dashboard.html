@@ -57,20 +57,21 @@
 <div class="wrap">
 
 <h1>Quacket</h1>
-<div class="sub">專案儀表板 · 更新於 8/16 · 你現在裝的是 v0.2.8</div>
+<div class="sub">專案儀表板 · 更新於 8/16 · 你現在裝的是 v0.2.9</div>
 
 <div class="hero">
-  <div class="where">現在在哪:「重開機後自動確認上一份報告送出去沒」已經做完、你逐條驗收過、<strong>發成 v0.2.8 裝到你電腦上了</strong>,這一格<strong>收工</strong> — 從現在起你手上的 Quacket 就會做這件事。</div>
+  <div class="where">現在在哪:「上一份報告的狀態不擋你寫新的,你可以自己按『再確認一次』」已經做完、你逐條驗收過、<strong>發成 v0.2.9 裝到你電腦上了</strong>,這一格<strong>收工</strong> — 從現在起那一列只是旁邊的一句狀態,不會擋在你和下一份報告中間。</div>
   <div class="next">
     <svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-    <div><strong>下一步:</strong>開下一個功能 —「上一份報告的狀態不擋你寫新的,而且你可以自己按『再確認一次』」。開下一棒:<code>/build #29</code></div>
+    <div><strong>下一步:</strong>把這一格和它衍生的那張修正單收掉(<code>/close #40</code>、<code>/close #29</code>),然後開這條線最後一個功能 —「舊版留下的草稿搬過來,不會自己重送」。</div>
   </div>
 </div>
 
 <div class="card">
   <h2><svg class="ic" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>裝在你電腦上的版本</h2>
   <ul class="list">
-    <li><span class="when">v0.2.8<br>8/16</span><span>程式當掉之後重開,它會自己去 GitHub 對一次:真的送出去了就直接顯示成完成、附連結,你不用開瀏覽器找;真的沒送出去就自動補送一次,而且只會補一次。查不到、沒網路、沒登入就先擱著,絕不會亂送第二份。查詢期間你照樣能打新報告,打到一半的字不會被搶走。<br><strong>反悔的話:</strong>舊版 installer 留在 <code>使用者資料夾\Quacket-installers\Quacket_0.2.7_x64-setup.exe</code>,點兩下就裝回去。</span></li>
+    <li><span class="when">v0.2.9<br>8/16</span><span>上一份還沒確認完的報告,現在是輸入框<strong>旁邊的一列狀態</strong>,不是擋路的牆:它掛在那裡的時候,你照樣打字、貼圖、送出新報告,新的舊的互不影響,連把新的丟掉也動不到舊的。那一列上有一顆<strong>「再確認一次」</strong>,網路或登入恢復之後你自己按,它只會去問那一份,不會順手動到別份。程式藏起來的時候,結果出來(成功或失敗)會用系統通知告訴你,不會硬把視窗搶到你面前。話也講清楚了:還在查的時候就寫「還在確認」而且不給你按鈕(結果還沒出來,給動作反而危險),查完才告訴你成功還是可以再試一次。<br><strong>反悔的話:</strong>舊版 installer 留在 <code>使用者資料夾\Quacket-installers\Quacket_0.2.8_x64-setup.exe</code>,點兩下就裝回去。</span></li>
+    <li><span class="when">v0.2.8<br>8/16</span><span>程式當掉之後重開,它會自己去 GitHub 對一次:送出去了就顯示成完成附連結,沒送出去就補送一次、只補一次,查不到就先擱著。</span></li>
     <li><span class="when">v0.2.7<br>8/15</span><span>截圖上傳留收據,重試不會重傳一次。</span></li>
   </ul>
 </div>
@@ -81,7 +82,7 @@
     <div class="slice-row"><span class="slice-name">送出一次就是一次,不會變成兩篇</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
     <div class="slice-row"><span class="slice-name">截圖上傳留收據,重試不重傳</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
     <div class="slice-row"><span class="slice-name">重開機後自動確認上一份送出去沒</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
-    <div class="slice-row"><span class="slice-name">上一份的狀態不擋你寫新的,可以「再確認一次」</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">上一份的狀態不擋你寫新的,可以「再確認一次」</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
     <div class="slice-row"><span class="slice-name">舊版留下的草稿搬過來,不會自己重送</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
     <div class="group">你提過、還沒排進來的</div>
     <div class="slice-row"><span class="slice-name">更新新版不用重開程式</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
@@ -92,18 +93,24 @@
     <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l2.5 2.5"/></svg>品質現況</h2>
     <div class="qa-tiles">
       <div class="tile"><div class="num" style="color:var(--ok)">0</div><div class="lbl">必須先修</div></div>
-      <div class="tile"><div class="num" style="color:var(--warn)">1</div><div class="lbl">小毛病(帶著走)</div></div>
-      <div class="tile"><div class="num" style="color:var(--ok)">769</div><div class="lbl">既有功能全數正常</div></div>
+      <div class="tile"><div class="num" style="color:var(--warn)">3</div><div class="lbl">小毛病(帶著走)</div></div>
+      <div class="tile"><div class="num" style="color:var(--ok)">792</div><div class="lbl">既有功能全數正常</div></div>
     </div>
     <div class="ask"><strong>等你決定:</strong>「更新不用重開程式」和「快捷鍵跳到挑 issue 那區」這兩個你提過的想法 — 要現在插隊做,還是等目前這條線(還有兩個功能)做完?我的建議是等做完,這條線每一格都在補「報告不會弄丟、不會變兩篇」,中間插隊會讓半成品多待幾天。</div>
     <div class="note">
-      <strong>那個小毛病是什麼:</strong>送出的時候如果卡到一半沒下文,程式在硬碟上把它記成「失敗」,但實際處理的時候當成「還不確定」在走 — 行為是對的,兩個字不一致而已,只有以後查問題的人會被那個字誤導。你確認過之後再修。<br><br>
+      <strong>那三個小毛病是什麼(都是你看過、拍板「之後修」的):</strong><br>
+      1. 送出卡到一半沒下文的時候,程式在硬碟上把它記成「失敗」,實際處理卻當成「還不確定」在走 — 行為是對的,兩個字不一致而已,只有以後查問題的人會被誤導。<br>
+      2. 萬一同時卡了兩份沒確認完的報告,那兩列長得一模一樣,分不出誰是誰 — 按鈕本身是對的(按 A 不會動到 B,拿真的 GitHub 驗過),只是「你按的是哪一份」不夠明顯。要連續中斷兩次才遇得到。<br>
+      3. 網路整個斷掉的時候,錯誤訊息會寫成「不確定你用哪個 GitHub 帳號登入」— 講的方向錯了,實際是沒網路。訊息誤導,不影響資料。
 </div>
   </div>
 
   <div class="card">
     <h2><svg class="ic" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>最近幫你做的決定</h2>
     <ul class="list">
+      <li><span class="when">8/16</span><span>驗收清單原本寫「每一種狀況都要給你一個下一步」,你看過實際畫面後改掉了這行字:結果<strong>還在查</strong>的時候不給按鈕才是對的 — 那顆按鈕不是按了沒反應,就是重複再問一次。改的是規格的措辭,不是程式。</span></li>
+      <li><span class="when">8/16</span><span>同一列裡一半寫「還在確認」、一半寫「送不出去」,自相矛盾 — 你當場判「現在修」,改成從頭到尾都講「我們還不能確認」。這片主打把話講清楚,留一句打架的話等於砸自己招牌。</span></li>
+      <li><span class="when">8/16</span><span>「按下再確認之後,按鈕會消失、不會被連按兩次」這件事,原本的自動檢查講不出來(它驗的是測試自己寫的複製品,不是真的程式)。補了一條把查詢停在半空中的檢查,現在真的釘住了。</span></li>
       <li><span class="when">8/16</span><span>重開後的自動確認,會先等幾秒再去問 GitHub — 因為剛送出去的東西,GitHub 那邊要幾秒才查得到,問太快會得到「沒有」而害你被送兩份。代價:自動確認從一瞬間變成最多等 18 秒,但這個等待完全在背景,你照樣能打字。</span></li>
       <li><span class="when">8/16</span><span>那個「查太快會送兩份」是實測抓到的,不是猜的 — 用真的 GitHub 量了兩輪,剛開好的報告要 4.3 秒和 6.9 秒才查得到。修完重測三次都只送一份。</span></li>
       <li><span class="when">8/16</span><span>有一條自動檢查是直接改硬碟上的紀錄來製造情況,不是從畫面操作出來的 — 因為那個情況從畫面根本做不出來。代價:以後存檔格式改了,這條檢查要跟著改。</span></li>
@@ -115,8 +122,8 @@
   <div class="card">
     <h2><svg class="ic" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>接下來的驗收點</h2>
     <ul class="list">
-      <li><span class="when">下一個</span><span>「上一份的狀態不擋你寫新的,可以再確認一次」— 做完一樣帶你逐條看,你點頭才算過。</span></li>
-      <li><span class="when">最後</span><span>「舊版留下的草稿搬過來」— 這條做完,這整條線就收工了。</span></li>
+      <li><span class="when">下一個</span><span>「舊版留下的草稿搬過來,不會自己重送」— 做完一樣帶你逐條看,你點頭才算過。這條做完,這整條線就收工了。</span></li>
+      <li><span class="when">之後</span><span>那三個「之後修」的小毛病,和你提過的兩個想法(更新不用重開、快捷鍵跳到挑 issue),等這條線收工後一起排。</span></li>
     </ul>
   </div>
 </div>
