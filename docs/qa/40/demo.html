@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>驗收 #40 — 那句自打嘴巴的話</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #fff; --ink: #1c1c1a; --dim: #6b6b66;
+    --line: #e2e2dd; --good: #2f7a4f; --warn: #a8601a; --accent: #2b4c7e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#17171a; --card:#1f1f23; --ink:#eceae6; --dim:#9b9b95;
+            --line:#33333a; --good:#6fc08e; --warn:#d8a35e; --accent:#8fb3e0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-size:16px; line-height:1.65;
+         font-family:"Noto Sans TC","Segoe UI",system-ui,sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 30px; line-height:1.3; margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 32px; }
+  h2 { font-size: 20px; margin: 44px 0 12px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 0 0 4px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 20px 22px; margin: 16px 0; }
+  .card.warnbox { border-color: var(--warn); }
+  .num { color: var(--dim); font-size: 13px; letter-spacing: .04em; }
+  .when { margin: 10px 0 2px; }
+  .when b { color: var(--accent); }
+  figure { margin: 14px 0 0; }
+  img { width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  figcaption { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  code { background: rgba(128,128,128,.14); padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+  pre { background: rgba(128,128,128,.14); padding: 12px 14px; border-radius: 6px;
+        overflow-x: auto; font-size: 14px; }
+  ul { padding-left: 20px; }
+  .ok { color: var(--good); font-weight: 600; }
+  .bad { color: var(--warn); font-weight: 600; }
+  .quote { border-left: 3px solid var(--line); padding-left: 14px; color: var(--dim); margin: 10px 0; }
+  .says { border-left: 3px solid var(--accent); padding: 6px 0 6px 14px; margin: 10px 0;
+          font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>驗收 #40 — 那句自打嘴巴的話</h1>
+<p class="sub">上次 #40 你選「現在修」。修好了,這頁只重看受影響的那一列,不重走整片。</p>
+
+<div class="card">
+  <h3>一句話</h3>
+  <p>原本那一列會同時說「還在確認」跟「送不出去」,一半說不知道、一半說確定失敗,旁邊還放一顆「再查一次」。現在它只說一件事:<b>「我還不確定這份到底有沒有送出去」</b>——跟那顆按鈕終於是同一件事了。</p>
+</div>
+
+<div class="card warnbox">
+  <h3>先講:已知還沒解的一件事</h3>
+  <p>不擋這次驗收,你先知道,等下看到第 6 段不會嚇到。收尾時你決定要現在修、之後修、還是不修。</p>
+  <ul>
+    <li><b>網路掛掉會被講成「登入有問題」</b>(#41)。Quacket 問 GitHub「現在是誰登入」時,不管是斷網、被限流、逾時、還是真的登出,通通回同一句「Could not confirm which GitHub account is signed in.」。所以 wi-fi 斷了的時候,你會跑去翻登入設定,但那裡根本沒問題。這句話本身是白話、也是「不確定」的寫法,所以不擋今天的驗收。<b>這條在 #40 之前就存在,不是這次改壞的。</b></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>怎麼看這一頁</h3>
+  <p>每一段都是「<b>什麼情況 → 你會看到什麼</b>」,附一張 QA 實跑的畫面截圖(真的跑出來拍的,不是示意圖)。你逐條看、逐條說「對,這是我要的」,不對就講,我當場分類。</p>
+  <p>這輪證據有個關鍵:畫面上那句話<b>不是 QA 自己打進去的</b>。真的 Quacket 對著真的 GitHub、真的硬碟跑一遍,把它自己吐出來的東西存成檔案,再原封不動放回畫面上重播。所以「看起來對」不可能是 QA 打對的。</p>
+  <p>想自己摸的話,一行指令就能把同款環境開起來:</p>
+  <pre>bash docs/qa/40/replay.sh</pre>
+</div>
+
+<h2>0. 對照組:上次出貨時那一列長這樣</h2>
+<p class="num">bug 本體</p>
+<p class="when"><b>什麼情況:</b>#29 出貨的版本,舊報告卡住。</p>
+<p class="when"><b>你會看到:</b>一句話裡兩個互相打架的說法——</p>
+<div class="says">Your report from last time is still pending. <span class="bad">Could not file this report.</span> &nbsp;[Check again]</div>
+<p>「還在等結果」跟「這份送不出去」不可能同時成立,而下面那顆按鈕又說「要不要再查一次」——查一件剛剛說已經確定失敗的事。</p>
+<figure>
+  <img src="qa40-before-the-contradiction-as-shipped.png" alt="舊版:同一列同時說還在等與送不出去">
+  <figcaption>QA 實跑畫面(舊版重播):矛盾就在最上面那一列。</figcaption>
+</figure>
+
+<h2>1. 修好之後,那一列只說一件事</h2>
+<p class="num">驗收項 18、38</p>
+<p class="when"><b>什麼情況:</b>同一個情境原封不動再跑一次——送出時失敗過一次,重開後想補送,結果硬碟又出問題。</p>
+<p class="when"><b>你會看到:</b></p>
+<div class="says">Your report from last time is still pending. <span class="ok">Could not confirm whether this report was sent.</span> &nbsp;[Check again]</div>
+<p>整句都是「我不知道」,按鈕是「那就去問清楚」。一致了。</p>
+<figure>
+  <img src="qa40-s1-pending-says-cannot-confirm.png" alt="修好後:那一列說我還不確定這份有沒有送出去">
+  <figcaption>QA 實跑畫面:同一個位置、同一個情境,現在只講一件事。</figcaption>
+</figure>
+<p class="quote">失敗的原因沒有被丟掉——Quacket 自己在硬碟上照舊記著是「建 issue 那步失敗了」,只是不拿這句去嚇你,因為它其實還沒確定結果。</p>
+
+<h2>2. 還在查的時候,不給你按鈕</h2>
+<p class="num">驗收項 38(後半段)</p>
+<p class="when"><b>什麼情況:</b>剛打開 Quacket,它正在問 GitHub「上次那份到底怎麼了」。</p>
+<p class="when"><b>你會看到:</b>一列轉圈圈 +「Still checking your report from last time…」,<b>完全沒有按鈕</b>。結果都還不知道,這時候給你動作才是不安全的。</p>
+<figure>
+  <img src="qa40-s1-still-checking-offers-no-action.png" alt="還在確認的狀態只有轉圈圈,沒有按鈕">
+  <figcaption>QA 實跑畫面:轉圈圈那列右邊是空的,下面照樣可以打字。</figcaption>
+</figure>
+<p class="quote">這正是上次你拍板改掉的那句驗收文字——「結果還不確定時不給動作」。這次順便驗到它真的是這樣。</p>
+
+<h2>3. 按下去真的會去查,旁邊照樣能打新報告</h2>
+<p class="num">驗收項 18</p>
+<p class="when"><b>什麼情況:</b>你按了 <code>Check again</code>,一邊等一邊繼續回報新的問題。</p>
+<p class="when"><b>你會看到:</b>那一列變回轉圈圈、按鈕暫時消失(所以不會被連按兩次重複開票),而輸入框完全不受影響——照樣打字。</p>
+<figure>
+  <img src="qa40-s1-check-again-and-capture-still-work.png" alt="按下 Check again 後那列在轉圈圈,下面新報告照樣打字">
+  <figcaption>QA 實跑畫面:上面在查、下面在打「the tray icon vanishes after I unlock windows」,兩件事互不干擾。</figcaption>
+</figure>
+
+<h2>4. 查完還是沒答案的話,是重講一次,不是變成一道牆</h2>
+<p class="num">驗收項 18</p>
+<p class="when"><b>什麼情況:</b>你按了再查,但情況還是沒好轉。</p>
+<p class="when"><b>你會看到:</b>同一句話回來、按鈕回來,你剛剛打到一半的新報告一個字都沒少。不會跳錯誤視窗、不會把你趕出去。</p>
+<figure>
+  <img src="qa40-s1-after-check-again-row-is-restated.png" alt="再查一次之後那列被重述,半打的報告還在">
+  <figcaption>QA 實跑畫面:狀態列重講一次,你手上的東西不動。</figcaption>
+</figure>
+
+<h2>5. 另一條失敗路線也講同一句話</h2>
+<p class="num">驗收項 38</p>
+<p class="when"><b>什麼情況:</b>補送的時候不是硬碟壞,而是 GitHub 直接把這次建 issue 擋掉。</p>
+<p class="when"><b>你會看到:</b>一樣是那句「還不確定有沒有送出去」,不會因為換一條失敗路線就冒出另一種說法。</p>
+<figure>
+  <img src="qa40-s2-rejected-create-also-uncertainty.png" alt="GitHub 擋掉建立時也是同一句不確定">
+  <figcaption>QA 實跑畫面:另一條路,同樣的講法。</figcaption>
+</figure>
+<p class="quote">這裡有件事值得講清楚,因為乍看像「講太保守」:這個情況下 QA 知道 GitHub 上什麼都沒建,但 <b>Quacket 自己不知道</b>——GitHub 回報失敗時,分不出「根本沒建成」還是「建成了但回報掉了」。所以「還不確定」是它唯一能誠實說的話,而它下次開機是去問 GitHub,不是回頭問你。</p>
+
+<h2>6. 但也沒有把所有情況壓成同一句</h2>
+<p class="num">驗收項 38 · 同時是 #41 的證據</p>
+<p class="when"><b>什麼情況:</b>連線整個斷掉,Quacket 連問都問不到。</p>
+<p class="when"><b>你會看到:</b>那一列保留它自己的理由,不是被壓成上面那句通用的:</p>
+<div class="says">Your report from last time is still pending. Could not confirm which GitHub account is signed in. &nbsp;[Check again]</div>
+<p><b>保留各自的理由是對的</b>——不然你會失去「為什麼查不到」的線索。但<b>這一句本身講錯了對象</b>:真正發生的是網路斷了,它卻說登入有問題。這就是開頭先講的 #41,在 #40 之前就存在。</p>
+<figure>
+  <img src="qa40-s3-lookup-keeps-its-own-reason.png" alt="連不上時保留 lookup 自己的理由,但理由指向登入">
+  <figcaption>QA 實跑畫面:講法沒被壓平(好),但這句指錯方向(#41)。</figcaption>
+</figure>
+
+<h2>7. 「還不確定」是誠實的,因為真的查得出結論</h2>
+<p class="num">驗收項 18</p>
+<p class="when"><b>什麼情況:</b>網路回來了,你按 <code>Check again</code>。</p>
+<p class="when"><b>你會看到:</b>那份報告的結論出來了——<b>Issue #115 filed</b>,配 <code>Open in browser</code> 跟 <code>New report</code>。</p>
+<figure>
+  <img src="qa40-s4-check-again-resolves-it.png" alt="按 Check again 之後收斂成 Issue #115 filed">
+  <figcaption>QA 實跑畫面:不確定被問掉了,不是被猜掉的。</figcaption>
+</figure>
+<p class="quote">這條是拿真的 GitHub 驗的:整個過程結束後,那個 repo 裡屬於這份報告的 issue <span class="ok">只有 1 張</span>,不是 2 張。按「再查一次」是去問,不是再送一次。<br>真的 issue:<code>c3lew/quacket-qa-target#115</code></p>
+
+<h2>順手補的一件小事</h2>
+<div class="card">
+  <p>上次 QA 提過:擋「程式內部字眼漏到畫面上」的自動檢查,只掃了句子、沒掃按鈕上的字。現在四種狀況的按鈕也一起掃了。目前按鈕本來就是乾淨的,這是防以後。</p>
+  <p>另外加了一道自動檢查:以後只要有人再把「確定失敗」的句子塞進「還不確定」那一列,<b>build 會直接紅掉</b>。這條驗過真的會咬——把修好的那行改回去,測試立刻失敗。</p>
+</div>
+
+<h2>還沒驗到的一塊</h2>
+<div class="card">
+  <p>這輪一樣全程跑在瀏覽器裡,沒有經過 Windows 那層外殼(系統列圖示、全域快捷鍵、真正的 Windows 通知、自動更新)。這次改的是純文字層,而那一列在殼裡殼外是同一段程式畫出來的。</p>
+  <p>另外「還在確認時不會被連按兩次」那條,是對著 QA 的複製品驗的;<b>按鈕在查的時候會消失</b>才是真的產品行為(第 3 段那張)。</p>
+  <p>想在真的 app 上親手按一下的話,我可以現在把它起起來給你摸。</p>
+</div>
+
+</div>
+</body>
+</html>

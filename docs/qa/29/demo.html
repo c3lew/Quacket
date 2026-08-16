@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>驗收 #29 — 上一份沒收完尾的報告</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --card: #fff; --ink: #1c1c1a; --dim: #6b6b66;
+    --line: #e2e2dd; --good: #2f7a4f; --warn: #a8601a; --accent: #2b4c7e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#17171a; --card:#1f1f23; --ink:#eceae6; --dim:#9b9b95;
+            --line:#33333a; --good:#6fc08e; --warn:#d8a35e; --accent:#8fb3e0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-size:16px; line-height:1.65;
+         font-family:"Noto Sans TC","Segoe UI",system-ui,sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 30px; line-height:1.3; margin: 0 0 6px; }
+  .sub { color: var(--dim); margin: 0 0 32px; }
+  h2 { font-size: 20px; margin: 44px 0 12px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 0 0 4px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          padding: 20px 22px; margin: 16px 0; }
+  .card.warnbox { border-color: var(--warn); }
+  .num { color: var(--dim); font-size: 13px; letter-spacing: .04em; }
+  .when { margin: 10px 0 2px; }
+  .when b { color: var(--accent); }
+  figure { margin: 14px 0 0; }
+  img { width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  figcaption { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  code { background: rgba(128,128,128,.14); padding: 1px 5px; border-radius: 4px; font-size: 14px; }
+  pre { background: rgba(128,128,128,.14); padding: 12px 14px; border-radius: 6px;
+        overflow-x: auto; font-size: 14px; }
+  ul { padding-left: 20px; }
+  .ok { color: var(--good); font-weight: 600; }
+  .quote { border-left: 3px solid var(--line); padding-left: 14px; color: var(--dim); margin: 10px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>驗收 #29 — 上一份沒收完尾的報告</h1>
+<p class="sub">一頁看完:這片做了什麼、實際跑起來長什麼樣、還有哪兩件事沒做完。</p>
+
+<div class="card">
+  <h3>一句話</h3>
+  <p>你上次送出報告時如果斷網、當機、或還沒送完就關掉,那份報告不會消失,也<b>不會擋住你</b>——它變成 Quacket 視窗裡的一列狀態,旁邊照樣可以打新的報告。</p>
+</div>
+
+<div class="card warnbox">
+  <h3>先講:已知還沒解的兩件事</h3>
+  <p>不擋這次驗收,但你先知道,等下看到不會嚇到。收尾時你決定要現在修、之後修、還是不修。</p>
+  <ul>
+    <li><b>兩份沒收完尾的報告長得一模一樣</b>。如果同時卡了兩份,那兩列文字逐字相同,沒有標題也沒有日期,你分不出哪列是哪份。按鈕本身是對的(按 A 只會處理 A),看不出來的是「我剛剛按的是哪一份」。</li>
+    <li><b>有一種情況兩句話會打架</b>。同一列裡一半說「還在確認」、一半說「送不出去」。這是真的會發生的組合,不是編的。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>怎麼看這一頁</h3>
+  <p>下面每一段都是一條你當初拍板的驗收項,寫成「<b>什麼情況 → 你會看到什麼</b>」,附一張 QA 實跑的畫面截圖(不是示意圖,是真的跑出來拍的)。你逐條看、逐條說「對,這是我要的」,不對就講,我當場分類。</p>
+  <p>想自己摸的話,一行指令就能把同款環境開起來:</p>
+  <pre>bash docs/qa/29/replay.sh</pre>
+</div>
+
+<h2>1. 卡住的舊報告是一列狀態,不是一道牆</h2>
+<p class="num">驗收項 13</p>
+<p class="when"><b>什麼情況:</b>上次有份報告沒收完尾,你重開 Quacket。</p>
+<p class="when"><b>你會看到:</b>視窗上方多一列字:「Your report from last time is still pending.」旁邊一顆看得見的 <code>Check again</code> 按鈕。沒有彈窗、沒有擋住輸入框、不用先處理它才能做別的事。</p>
+<figure>
+  <img src="qa29-ac1-pending-status-not-a-wall.png" alt="卡住的舊報告顯示為一列狀態,下方 capture box 照常可用">
+  <figcaption>QA 實跑畫面:那一列在上面,打字的地方在下面,完全沒被擋。</figcaption>
+</figure>
+
+<h2>2. 按 Check again 會去重問一次,並更新那一列</h2>
+<p class="num">驗收項 13</p>
+<p class="when"><b>什麼情況:</b>剛才斷網或沒登入,現在恢復了,你按 <code>Check again</code>。</p>
+<p class="when"><b>你會看到:</b>那一列自己變成結論——例如「was filed as issue #58.」,按鈕跟著換成 <code>View on GitHub</code>。</p>
+<figure>
+  <img src="qa29-ac4-check-again-updates-the-status.png" alt="按下 Check again 後該列變成已送出的結論">
+  <figcaption>QA 實跑畫面:同一列從「還在等」變成「已經送出去了,去看」。</figcaption>
+</figure>
+<p class="quote">拿真的 GitHub 驗過:斷線那段期間 Quacket 一張 issue 都沒開;恢復後重問,GitHub 上是 <span class="ok">1 張</span>,不是 2 張。不會因為你多按一次就重複開票。</p>
+
+<h2>3. 那一列掛著的時候,新報告照樣寫得完</h2>
+<p class="num">驗收項 14</p>
+<p class="when"><b>什麼情況:</b>舊那列還沒解決,你想直接回報新的問題。</p>
+<p class="when"><b>你會看到:</b>打字、貼截圖、Refine、Submit 一路走到底都正常,舊那列從頭到尾原地不動、沒有任何一個按鈕因為它而變灰。</p>
+<figure>
+  <img src="qa29-ac2-capture-usable-beside-pending.png" alt="舊報告狀態列還在,新報告正常打字與附圖">
+  <figcaption>QA 實跑畫面:上面卡著舊的,下面新報告已經打好字、貼好圖。</figcaption>
+</figure>
+<figure>
+  <img src="qa29-ac3-new-report-filed-old-row-survives.png" alt="新報告送出成功,舊報告那列仍在">
+  <figcaption>新報告送出成功(Issue #99 filed),舊那列還在,沒被吃掉。</figcaption>
+</figure>
+
+<h2>4. 就算把新報告丟掉,舊的也不會跟著陪葬</h2>
+<p class="num">驗收項 15</p>
+<p class="when"><b>什麼情況:</b>新報告打一打不想寫了,按 Discard 整份丟掉——草稿能做的最狠的事。</p>
+<p class="when"><b>你會看到:</b>輸入框清空,舊那列還在,而且之後按 <code>Check again</code> 一樣救得回來。</p>
+<figure>
+  <img src="qa29-ac3-discard-does-not-take-the-old-report.png" alt="Discard 新草稿後舊報告狀態列仍在">
+  <figcaption>QA 實跑畫面:Discard 之後,舊那列毫髮無傷。</figcaption>
+</figure>
+<p class="quote">這條在真的硬碟上驗過:丟掉新草稿前後,舊報告存在磁碟上的內容<span class="ok">一個位元組都沒變</span>。</p>
+
+<h2>5. 視窗藏起來時有結論,會跳系統通知(成功)</h2>
+<p class="num">驗收項 16</p>
+<p class="when"><b>什麼情況:</b>Quacket 藏到系統列了,這時舊報告終於確認送出去了。</p>
+<p class="when"><b>你會看到:</b>一則系統通知「Your report from last time was filed as issue #57.」,視窗<b>不會</b>自己跳出來搶你正在做的事。</p>
+<figure>
+  <img src="qa29-ac5-hidden-success-raises-os-notification.png" alt="藏起來時成功會發系統通知">
+  <figcaption>QA 實跑畫面:通知發出去了,視窗沒有自己彈回來。</figcaption>
+</figure>
+<figure>
+  <img src="qa29-ac5-hidden-success-with-draft-in-progress.png" alt="半打的草稿在藏起來期間不會被結論畫面蓋掉">
+  <figcaption>加碼驗的:你有一句話打到一半才藏起來的話,回來時那句話還在,結論只是旁邊多一列——不會蓋掉你打的東西。</figcaption>
+</figure>
+
+<h2>6. 藏起來時失敗也會跳通知,但平常送出不會多吵你</h2>
+<p class="num">驗收項 17</p>
+<p class="when"><b>什麼情況:</b>藏起來期間,舊報告確定沒送成。</p>
+<p class="when"><b>你會看到:</b>通知「Your report from last time was not sent. Open Quacket to try again.」回到視窗那列寫「安全,可以再試一次」,配一顆 <code>Try again</code>。</p>
+<figure>
+  <img src="qa29-ac5-hidden-failure-raises-os-notification.png" alt="藏起來時失敗會發系統通知">
+  <figcaption>QA 實跑畫面:失敗也給結論,不會讓你一直不知道。</figcaption>
+</figure>
+<p class="when"><b>反過來也驗了:</b>你開著視窗正常送出報告,<b>不會</b>多冒一個成功通知——畫面上已經寫「Issue #99 filed」了,再彈一個是吵人。</p>
+<figure>
+  <img src="qa29-ac5-visible-submit-gains-no-notification.png" alt="開著視窗送出不會多一個成功通知">
+  <figcaption>QA 實跑畫面:該有的有,不該有的沒有。</figcaption>
+</figure>
+
+<h2>7. 四種狀況講人話,各給一個安全的下一步</h2>
+<p class="num">驗收項 18、38</p>
+<p class="when"><b>什麼情況:</b>舊報告可能落在四種狀況。</p>
+<p class="when"><b>你會看到:</b>四種各講一句白話 + 最多一顆按鈕,不會同時丟兩個選擇讓你猜:</p>
+<ul>
+  <li><b>還在確認</b> —「Still checking your report from last time…」轉圈圈,<b>沒有按鈕</b>(見下方說明)。</li>
+  <li><b>還沒有答案</b> —「still pending」+ <code>Check again</code>。</li>
+  <li><b>確定送出了</b> —「was filed as issue #58.」+ <code>View on GitHub</code>。</li>
+  <li><b>確定沒送成</b> —「not sent, so it is safe to try again.」+ <code>Try again</code>。</li>
+</ul>
+<figure>
+  <img src="qa29-ac6-safe-to-try-again.png" alt="確定沒送成的狀態與 Try again 按鈕">
+  <figcaption>QA 實跑畫面:「沒送成,可以安心再試」——講清楚是安全的,你才敢按。</figcaption>
+</figure>
+<p class="when">整頁文字掃過,沒有出現任何程式內部的字眼、上傳進度、或檔案路徑。</p>
+
+<h2>8. 有一條要你決定文字怎麼寫</h2>
+<p class="num">驗收項 18 的一個細節</p>
+<p>當初驗收清單寫「四種狀況各給一個安全的下一步」。做出來的時候,<b>「還在確認」那一種沒有給按鈕</b>——因為它正在問 GitHub,這時候放一顆按鈕,按了不是沒反應、就是重複問一次,兩個都不好。轉圈圈 +「還在確認」已經在說「等一下」了。</p>
+<figure>
+  <img src="qa29-ac6-still-checking-no-button.png" alt="還在確認的狀態只有轉圈圈,沒有按鈕,下方 capture box 照常可用">
+  <figcaption>QA 實跑畫面:轉圈圈那列沒有按鈕,下面照樣打字送報告。</figcaption>
+</figure>
+<p>QA 那邊獨立判定「畫面是對的,是驗收清單那句話該改」。要你點頭:<b>這樣可以,還是你就是要那顆按鈕?</b></p>
+
+<h2>還沒驗到的一塊</h2>
+<div class="card">
+  <p>這輪 QA 全程跑在瀏覽器裡,沒有經過 Windows 那層外殼。所以「發了系統通知」的意思是 <b>Quacket 確實把那句話發出去了</b>,不是「Windows 真的畫了一個泡泡出來」。系統列圖示、全域快捷鍵、自動更新也同理。</p>
+  <p>這塊要你在真的 app 上親手摸一下才算數——我可以現在把 app 起起來給你按。</p>
+</div>
+
+</div>
+</body>
+</html>
