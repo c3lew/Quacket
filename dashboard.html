@@ -57,14 +57,22 @@
 <div class="wrap">
 
 <h1>Quacket</h1>
-<div class="sub">專案儀表板 · 更新於 8/16 · 你現在裝的是 v0.2.7</div>
+<div class="sub">專案儀表板 · 更新於 8/16 · 你現在裝的是 v0.2.8</div>
 
 <div class="hero">
-  <div class="where">現在在哪:「重開機後自動確認上一份報告送出去沒」已經做完,十條你都逐條看過、親口說是你要的,沒有任何必須先修的問題。只差最後一步 — 還沒發成新版裝到你電腦上,所以你手上的 Quacket 目前還不會做這件事。</div>
+  <div class="where">現在在哪:「重開機後自動確認上一份報告送出去沒」已經做完、你逐條驗收過,而且<strong>已經發成 v0.2.8 裝到你電腦上了</strong> — 從現在起你手上的 Quacket 就會做這件事。</div>
   <div class="next">
     <svg class="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-    <div><strong>下一步:</strong>發新版(v0.2.8)並直接幫你換裝,舊版留著隨時可以裝回去。要你在場,程式會重開一次。開下一棒:<code>/client-demo #28</code></div>
+    <div><strong>下一步:</strong>把這一格收掉(<code>/close #28</code>),然後開下一個功能「上一份的狀態不擋你寫新的」。</div>
   </div>
+</div>
+
+<div class="card">
+  <h2><svg class="ic" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>裝在你電腦上的版本</h2>
+  <ul class="list">
+    <li><span class="when">v0.2.8<br>8/16</span><span>程式當掉之後重開,它會自己去 GitHub 對一次:真的送出去了就直接顯示成完成、附連結,你不用開瀏覽器找;真的沒送出去就自動補送一次,而且只會補一次。查不到、沒網路、沒登入就先擱著,絕不會亂送第二份。查詢期間你照樣能打新報告,打到一半的字不會被搶走。<br><strong>反悔的話:</strong>舊版 installer 留在 <code>使用者資料夾\Quacket-installers\Quacket_0.2.7_x64-setup.exe</code>,點兩下就裝回去。</span></li>
+    <li><span class="when">v0.2.7<br>8/15</span><span>截圖上傳留收據,重試不會重傳一次。</span></li>
+  </ul>
 </div>
 
 <div class="grid2">
@@ -72,7 +80,7 @@
     <h2><svg class="ic" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>功能進度</h2>
     <div class="slice-row"><span class="slice-name">送出一次就是一次,不會變成兩篇</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
     <div class="slice-row"><span class="slice-name">截圖上傳留收據,重試不重傳</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
-    <div class="slice-row"><span class="slice-name">重開機後自動確認上一份送出去沒</span><span class="badge b-warn">測試中</span><span class="bar"><i style="width:70%"></i></span></div>
+    <div class="slice-row"><span class="slice-name">重開機後自動確認上一份送出去沒</span><span class="badge b-ok">你已驗收</span><span class="bar"><i class="done" style="width:100%"></i></span></div>
     <div class="slice-row"><span class="slice-name">上一份的狀態不擋你寫新的,可以「再確認一次」</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
     <div class="slice-row"><span class="slice-name">舊版留下的草稿搬過來,不會自己重送</span><span class="badge b-fog">還沒開始</span><span class="bar"><i style="width:0%"></i></span></div>
     <div class="group">你提過、還沒排進來的</div>
@@ -90,8 +98,7 @@
     <div class="ask"><strong>等你決定:</strong>「更新不用重開程式」和「快捷鍵跳到挑 issue 那區」這兩個你提過的想法 — 要現在插隊做,還是等目前這條線(還有兩個功能)做完?我的建議是等做完,這條線每一格都在補「報告不會弄丟、不會變兩篇」,中間插隊會讓半成品多待幾天。</div>
     <div class="note">
       <strong>那個小毛病是什麼:</strong>送出的時候如果卡到一半沒下文,程式在硬碟上把它記成「失敗」,但實際處理的時候當成「還不確定」在走 — 行為是對的,兩個字不一致而已,只有以後查問題的人會被那個字誤導。你確認過之後再修。<br><br>
-      <strong>下一版(v0.2.8)會拿到什麼:</strong>程式當掉之後重開,它會自己去 GitHub 對一次:真的送出去了就直接顯示成完成、附連結,你不用開瀏覽器找;真的沒送出去就自動幫你補送一次,而且只會補一次。查不到、沒網路、沒登入的時候就先擱著,絕不會亂送第二份。查詢期間你照樣能打新的報告,打到一半的字也不會被搶走。
-    </div>
+</div>
   </div>
 
   <div class="card">
@@ -108,8 +115,7 @@
   <div class="card">
     <h2><svg class="ic" viewBox="0 0 24 24"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/></svg>接下來的驗收點</h2>
     <ul class="list">
-      <li><span class="when">馬上</span><span>「重開機後自動確認上一份報告」你已經逐條看過、都點頭了,只剩發新版換裝 — 要你在場,程式會重開一次,大概幾分鐘。</span></li>
-      <li><span class="when">再之後</span><span>「上一份的狀態不擋你寫新的,可以再確認一次」— 做完一樣帶你逐條看,你點頭才算過。</span></li>
+      <li><span class="when">下一個</span><span>「上一份的狀態不擋你寫新的,可以再確認一次」— 做完一樣帶你逐條看,你點頭才算過。</span></li>
       <li><span class="when">最後</span><span>「舊版留下的草稿搬過來」— 這條做完,這整條線就收工了。</span></li>
     </ul>
   </div>
