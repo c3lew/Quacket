@@ -1950,6 +1950,57 @@ describe('a report interrupted by a crash', () => {
     expect(services.recover).toHaveBeenNthCalledWith(2, 'fil_1');
   });
 
+  it('takes the button away for as long as the look it started is in flight', async () => {
+    /*
+     * Fixated from QA #40. The suite already says a `checking` notice carries no
+     * action (recovery.test.ts) and that a first pass renders that way; what
+     * nothing said is the SECOND pass — the one the user starts. QA had to prove
+     * "the button cannot be pressed twice" against a hand-written copy of the
+     * in-flight guard, because the shipped answer is not a guard at all: the row
+     * goes back to `checking`, and `checking` has no button. That is App wiring,
+     * and this is the only place it can be said.
+     */
+    let looked!: () => void;
+    const wait = new Promise<void>((resolve) => (looked = resolve));
+    let pass = 0;
+    const services = fakeServices({
+      recover: vi.fn(() =>
+        pass++ === 0
+          ? recovered([
+              // The #40 sentence itself, as the resume path now writes it.
+              { state: 'pending', filingId: 'fil_1', message: 'Could not confirm whether this report was sent.' },
+            ])
+          : {
+              async *[Symbol.asyncIterator]() {
+                yield { state: 'checking', filingId: 'fil_1' } as RecoveryEvent;
+                await wait;
+                yield { state: 'filed', filingId: 'fil_1', receipt: receipt({ issueNumber: 115 }) } as RecoveryEvent;
+              },
+            },
+      ),
+    });
+
+    await boot(services);
+    await screen.findByText(/still pending/);
+
+    await click('Check again');
+
+    expect(await screen.findByText(/Still checking/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+    // And the wait is not a wall: the capture box beside it still takes a report.
+    await type('the next thing that broke');
+    expect(await screen.findByDisplayValue('the next thing that broke')).toBeTruthy();
+
+    await act(async () => {
+      looked();
+      await wait;
+    });
+
+    expect(await screen.findByText(/was filed as issue #115/)).toBeVisible();
+    // One look per press — the row never had a second button to fire it again.
+    expect(services.recover).toHaveBeenCalledTimes(2);
+  });
+
   it('never lets anything the user does to the new report take the old one away', async () => {
     /*
      * Story 15, from the only side a user can see it: the new Draft and the
